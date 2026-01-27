@@ -4,6 +4,15 @@ from gtts import gTTS
 from io import BytesIO
 import random
 
+# --- BANCO DE DADOS DE RESERVA (Caso a IA falhe) ---
+FRASES_RESERVA = [
+    {"en": "I need to check my email.", "pt": "Eu preciso checar meu e-mail."},
+    {"en": "Where is the nearest station?", "pt": "Onde fica a estação mais próxima?"},
+    {"en": "Could you repeat that, please?", "pt": "Você poderia repetir isso, por favor?"},
+    {"en": "I am looking for a new job.", "pt": "Estou procurando um novo emprego."},
+    {"en": "Have a great day!", "pt": "Tenha um ótimo dia!"}
+]
+
 # --- CONFIGURAÇÃO ---
 @st.cache_resource
 def load_model():
@@ -23,22 +32,9 @@ def play_audio(text):
         tts.write_to_fp(fp)
         st.audio(fp.getvalue(), format="audio/mp3")
     except:
-        st.warning("Áudio indisponível no momento.")
+        st.warning("Áudio indisponível.")
 
-# --- SISTEMA DE EVOLUÇÃO ---
-def check_level_up():
-    niveis = ["A1", "A2", "B1", "B2", "C1", "C2"]
-    if st.session_state.xp >= 100:
-        atual = st.session_state.nivel
-        if atual in niveis and atual != "C2":
-            novo_index = niveis.index(atual) + 1
-            st.session_state.nivel = niveis[novo_index]
-            st.session_state.xp = 0 
-            st.balloons()
-            st.success(f"🎊 NÍVEL UP! Você agora está no {st.session_state.nivel}!")
-
-# --- INICIALIZAÇÃO DO ESTADO ---
-if 'step' not in st.session_state: st.session_state.step = 'setup'
+# --- INICIALIZAÇÃO ---
 if 'nivel' not in st.session_state: st.session_state.nivel = 'A1'
 if 'xp' not in st.session_state: st.session_state.xp = 0
 if 'aula_atual' not in st.session_state: st.session_state.aula_atual = None
@@ -47,60 +43,53 @@ if 'aula_atual' not in st.session_state: st.session_state.aula_atual = None
 with st.sidebar:
     st.title("👤 Seu Progresso")
     st.metric("Nível", st.session_state.nivel)
-    st.write(f"XP para o próximo nível:")
     st.progress(st.session_state.xp / 100)
-    st.write(f"**{st.session_state.xp} / 100**")
-    
-    if st.button("🔄 Reiniciar Tudo"):
+    st.write(f"XP: {st.session_state.xp}/100")
+    if st.button("🔄 Reiniciar"):
         for key in list(st.session_state.keys()): del st.session_state[key]
         st.rerun()
 
-# --- TELAS ---
+# --- ÁREA PRINCIPAL ---
+st.title("🏋️ Treino de Inglês")
 
-if st.session_state.step == 'setup':
-    st.title("🎧 LinguistAI")
-    obj = st.selectbox("O que quer praticar?", ["Business", "Travel", "Social"])
-    if st.button("Começar"):
-        st.session_state.obj = obj
-        st.session_state.step = 'practice'
-        st.rerun()
-
-elif st.session_state.step == 'practice':
-    st.title("🏋️ Área de Treino")
-    check_level_up()
-    
-    # BOTÃO PARA GERAR NOVA LIÇÃO
-    if st.button("✨ Gerar Nova Frase"):
-        with st.spinner("IA buscando nova lição..."):
-            try:
-                seed = random.randint(1, 10000)
-                prompt = (f"Level {st.session_state.nivel} English sentence about {st.session_state.obj}. "
-                          f"Format: Phrase: [English] | Translation: [Portuguese]. Seed: {seed}")
-                res = model.generate_content(prompt)
-                if res.text:
-                    st.session_state.aula_atual = res.text
-                    st.session_state.xp += 20 # Ganha XP a cada nova lição
-            except Exception as e:
-                st.error("Cota de IA atingida. Aguarde 15 segundos.")
-
-    # MOSTRAR A LIÇÃO (Se ela existir no estado)
-    if st.session_state.aula_atual:
-        st.markdown("---")
+if st.button("✨ Gerar Nova Lição"):
+    with st.spinner("Buscando lição..."):
         try:
-            texto = st.session_state.aula_atual
-            if "|" in texto:
-                partes = texto.split("|")
-                # Extração limpa do texto
-                ing = partes[0].split(":")[-1].strip()
-                pt = partes[1].split(":")[-1].strip()
-                
-                st.subheader("Tradução:")
-                st.info(pt)
-                
-                if st.button("🔊 Ouvir Pronúncia e Ver Inglês"):
-                    play_audio(ing)
-                    st.success(f"**Inglês:** {ing}")
-            else:
-                st.write(texto)
+            # TENTA USAR A IA
+            seed = random.randint(1, 10000)
+            prompt = f"Level {st.session_state.nivel} English sentence. Format: Phrase: [English] | Translation: [Portuguese]. Seed: {seed}"
+            res = model.generate_content(prompt)
+            st.session_state.aula_atual = res.text
+            st.session_state.xp += 20
         except:
-            st.error("Erro ao formatar a lição. Tente gerar outra.")
+            # SE A IA FALHAR, USA O BANCO DE RESERVA
+            item = random.choice(FRASES_RESERVA)
+            st.session_state.aula_atual = f"Phrase: {item['en']} | Translation: {item['pt']}"
+            st.session_state.xp += 10
+            st.info("Nota: Usando lição do banco de reserva (IA em repouso).")
+
+# MOSTRAR A LIÇÃO SEMPRE QUE EXISTIR
+if st.session_state.aula_atual:
+    st.markdown("---")
+    try:
+        texto = st.session_state.aula_atual
+        ingles = texto.split("|")[0].split(":")[-1].strip()
+        portugues = texto.split("|")[1].split(":")[-1].strip()
+        
+        st.subheader("Como se diz em inglês?")
+        st.write(f"💡 *{portugues}*")
+        
+        if st.button("🔊 Ver Resposta e Ouvir"):
+            st.success(ingles)
+            play_audio(ingles)
+            
+            # Lógica de subir nível
+            if st.session_state.xp >= 100:
+                niveis = ["A1", "A2", "B1", "B2", "C1"]
+                idx = niveis.index(st.session_state.nivel)
+                if idx < len(niveis)-1:
+                    st.session_state.nivel = niveis[idx+1]
+                    st.session_state.xp = 0
+                    st.balloons()
+    except:
+        st.error("Erro ao exibir lição. Tente gerar outra.")
