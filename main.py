@@ -10,101 +10,142 @@ from streamlit_mic_recorder import mic_recorder
 try:
     client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 except Exception as e:
-    st.error("Erro na API Key.")
+    st.error("Erro na API Key. Verifique seus Secrets no Streamlit.")
 
 DIFICULDADES = {
-    "Begginer": "Short phrases, basic greetings.",
-    "basic": "Daily routines, simple present.",
-    "intermediate": "Past events and future plans.",
-    "advanced": "Complex opinions and idioms.",
-    "professional": "Workplace scenarios and formal terms.",
-    "fluenty": "Slang, metaphors, and native speed."
+    "Begginer": "Very simple words, greetings only.",
+    "basic": "Simple present tense sentences.",
+    "intermediate": "Past/Future and connectors.",
+    "advanced": "Idioms and phrasal verbs.",
+    "professional": "Business English and formal terms.",
+    "fluenty": "Native slang and complex metaphors."
 }
 LISTA_NIVEIS = list(DIFICULDADES.keys())
 
-# --- 2. FUNÇÕES ---
-
-def chamar_ia(prompt, temp=1.0): # Temperatura máxima para máxima variedade
-    try:
-        completion = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=temp,
-            top_p=1.0 # Garante que ele explore mais o vocabulário
-        )
-        return completion.choices[0].message.content
-    except: return "Erro na conexão."
-
-# --- 3. ESTADO DA SESSÃO ---
+# --- 2. ESTADO DA SESSÃO ---
 if 'step' not in st.session_state: st.session_state.step = 'objetivo'
-if 'modo' not in st.session_state: st.session_state.modo = 'pratica'
 if 'nivel' not in st.session_state: st.session_state.nivel = 'Begginer'
+if 'modo' not in st.session_state: st.session_state.modo = 'pratica'
 if 'test_streak' not in st.session_state: st.session_state.test_streak = 0
 if 'aula_atual' not in st.session_state: st.session_state.aula_atual = None
 if 'mic_key' not in st.session_state: st.session_state.mic_key = 0
 
-# --- 4. INTERFACE ---
+# --- 3. TELAS ---
 
 if st.session_state.step == 'objetivo':
-    st.title("🎯 Configuração")
-    st.session_state.nivel = st.selectbox("Escolha seu nível:", LISTA_NIVEIS)
+    st.title("🎯 Configuração do Curso")
+    st.session_state.nivel = st.selectbox("Nível Inicial:", LISTA_NIVEIS)
     st.session_state.obj_selecionado = st.selectbox("Foco:", ["Social", "Business", "Travel"])
-    if st.button("Iniciar ➡️"):
+    if st.button("Começar Treino ➡️"):
         st.session_state.step = 'app'
         st.rerun()
 
 elif st.session_state.step == 'app':
+    # Barra Lateral
     with st.sidebar:
-        st.title("🕹️ Modos")
+        st.title("⚙️ Painel")
         if st.button("📖 Prática Diária"):
             st.session_state.modo = 'pratica'
-            st.session_state.aula_atual = None # Limpa a frase ao trocar de modo
+            st.session_state.aula_atual = None
             st.rerun()
         if st.button("🏆 Teste de Nível"):
             st.session_state.modo = 'teste'
             st.session_state.test_streak = 0
             st.session_state.aula_atual = None
             st.rerun()
+        
+        st.divider()
         st.write(f"Nível: **{st.session_state.nivel}**")
+        if st.session_state.modo == 'teste':
+            st.write(f"Progresso: {st.session_state.test_streak}/5")
+            st.progress(st.session_state.test_streak / 5)
 
-    # BOTÃO PRÓXIMA (O segredo está aqui)
-    if st.button("⏭️ Nova Pergunta (Forçar)", type="primary") or st.session_state.aula_atual is None:
-        st.session_state.aula_atual = None
-        st.session_state.feedback = None
-        
-        # Geramos um código único para cada requisição
-        unique_id = f"{time.time()}-{random.randint(1000, 9999)}"
-        
-        prompt = (f"Request ID: {unique_id}. "
-                  f"Você deve gerar uma frase ÚNICA e INÉDITA em inglês. "
-                  f"Nível: {st.session_state.nivel}. Contexto: {st.session_state.obj_selecionado}. "
-                  f"Nunca repita frases anteriores. Varie os verbos e substantivos. "
-                  f"Formato: Phrase: [Inglês] | Translation: [Português]")
-        
-        with st.spinner("Gerando conteúdo exclusivo..."):
-            res = chamar_ia(prompt)
-            if "|" in res:
-                st.session_state.aula_atual = res
-                st.session_state.mic_key += 1
-                st.rerun()
+    st.title("🗣️ Treino de Inglês")
 
-    # EXIBIÇÃO
-    if st.session_state.aula_atual:
-        texto = st.session_state.aula_atual
+    # Botão de Gerar Pergunta
+    if st.button("⏭️ Gerar Nova Pergunta", type="primary") or st.session_state.aula_atual is None:
+        with st.spinner("IA criando frase inédita..."):
+            # O Segredo para mudar a frase: Seed única no prompt
+            unique_seed = f"{time.time()}-{random.randint(1, 9999)}"
+            prompt = (f"Seed: {unique_seed}. Create a UNIQUE English sentence for level {st.session_state.nivel}. "
+                      f"Topic: {st.session_state.obj_selecionado}. Instructions: {DIFICULDADES[st.session_state.nivel]}. "
+                      f"Always use different verbs and nouns. "
+                      f"Format: Phrase: [English] | Translation: [Portuguese]")
+            
+            completion = client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=1.0
+            )
+            st.session_state.aula_atual = completion.choices[0].message.content
+            st.session_state.mic_key += 1
+            st.session_state.feedback = None
+            st.rerun() # Força o app a mostrar a frase nova imediatamente
+
+    # EXIBIÇÃO DA PERGUNTA (Sempre visível se aula_atual existir)
+    if st.session_state.aula_atual and "|" in st.session_state.aula_atual:
         try:
-            ing = texto.split("|")[0].split("Phrase:")[-1].replace("[","").replace("]","").strip()
-            pt = texto.split("|")[1].split("Translation:")[-1].replace("[","").replace("]","").strip()
+            res_ia = st.session_state.aula_atual
+            ing = res_ia.split("|")[0].split("Phrase:")[-1].replace("[","").replace("]","").strip()
+            pt = res_ia.split("|")[1].split("Translation:")[-1].replace("[","").replace("]","").strip()
             
-            st.info(f"**Traduza:** {pt}")
+            st.subheader(f"Como se diz em inglês?")
+            st.info(f"### {pt}")
             
-            # Botão de áudio para conferir
-            if st.button("🔊 Ouvir Original"):
+            if st.button("🔊 Ouvir Pronúncia"):
                 tts = gTTS(text=ing, lang='en')
                 fp = BytesIO()
                 tts.write_to_fp(fp)
                 st.audio(fp.getvalue(), format="audio/mp3")
 
-            audio = mic_recorder(start_prompt="🎤 Gravar", stop_prompt="⏹️ Parar", key=f"mic_{st.session_state.mic_key}")
-            # ... resto da lógica de correção ...
-        except:
-            st.write("Aguardando nova frase...")
+            st.divider()
+            
+            # Gravador de Áudio
+            audio = mic_recorder(
+                start_prompt="🎤 Clique para falar", 
+                stop_prompt="⏹️ Parar e Analisar", 
+                key=f"mic_{st.session_state.mic_key}"
+            )
+
+            if audio:
+                with st.spinner("Analisando sua fala..."):
+                    # Transcrição
+                    transcript = client.audio.transcriptions.create(
+                        file=("audio.wav", audio['bytes']), 
+                        model="whisper-large-v3-turbo", 
+                        response_format="text"
+                    )
+                    
+                    # Feedback
+                    f_prompt = f"The student said '{transcript}' for the sentence '{ing}'. Correct it in Portuguese. If it is 100% correct, start with the word CORRETO."
+                    feedback_res = client.chat.completions.create(
+                        model="llama-3.3-70b-versatile",
+                        messages=[{"role": "user", "content": f_prompt}]
+                    )
+                    feedback_text = feedback_res.choices[0].message.content
+
+                    st.write(f"🗣️ **Você disse:** {transcript}")
+                    st.write(f"📝 **Análise:** {feedback_text}")
+                    st.write(f"✅ **Gabarito:** {ing}")
+
+                    # Lógica de Nível
+                    if "CORRETO" in feedback_text.upper():
+                        if st.session_state.modo == 'teste':
+                            st.session_state.test_streak += 1
+                            if st.session_state.test_streak >= 5:
+                                st.balloons()
+                                idx = LISTA_NIVEIS.index(st.session_state.nivel)
+                                if idx < len(LISTA_NIVEIS) - 1:
+                                    st.session_state.nivel = LISTA_NIVEIS[idx+1]
+                                    st.success(f"Uau! Você subiu para o nível {st.session_state.nivel}!")
+                                    st.session_state.test_streak = 0
+                                    st.session_state.aula_atual = None
+                        else:
+                            st.success("Parabéns! Continue praticando.")
+                    else:
+                        if st.session_state.modo == 'teste':
+                            st.error("Erro no teste. Reiniciando sequência...")
+                            st.session_state.test_streak = 0
+
+        except Exception as e:
+            st.warning("Houve um pequeno erro na formatação da IA. Clique em 'Gerar Nova Pergunta'.")
