@@ -9,13 +9,13 @@ try:
         api_key = st.secrets["GOOGLE_API_KEY"]
         genai.configure(api_key=api_key)
         
-        # USANDO O NOME TÉCNICO COMPLETO PARA EVITAR ERRO 404
-        # 'models/gemini-1.5-flash-latest' ou 'models/gemini-pro'
-        model = genai.GenerativeModel(model_name='models/gemini-1.5-flash-latest')
+        # Tentativa com o nome de modelo mais simples possível
+        # O SDK cuida de encontrar a versão correta (v1 ou v1beta)
+        model = genai.GenerativeModel('gemini-1.5-flash')
     else:
         st.error("Chave 'GOOGLE_API_KEY' não encontrada nos Secrets.")
 except Exception as e:
-    st.error(f"Erro de conexão: {e}")
+    st.error(f"Erro de configuração: {e}")
 
 def play_audio(text):
     try:
@@ -34,7 +34,7 @@ if 'xp' not in st.session_state: st.session_state.xp = 0
 with st.sidebar:
     st.title("👤 Seu Perfil")
     if 'obj' in st.session_state:
-        st.write(f"**Objetivo:** {st.session_state.obj}")
+        st.write(f"**Foco:** {st.session_state.obj}")
         st.write(f"**XP:** {st.session_state.xp}")
     if st.button("Reiniciar Aplicativo"):
         for key in list(st.session_state.keys()): del st.session_state[key]
@@ -55,36 +55,31 @@ elif st.session_state.step == 'practice':
     if st.button("✨ Gerar Nova Lição"):
         with st.spinner("IA criando lição..."):
             try:
-                # Prompt direto e curto
                 prompt = f"Create 1 short English sentence for {st.session_state.obj}. Format: Phrase: [English] | Translation: [Portuguese]"
+                # Forçamos a geração sem parâmetros extras para evitar erros de versão
                 response = model.generate_content(prompt)
                 
-                if response.text:
+                if response:
                     st.session_state.aula_atual = response.text
                     st.session_state.xp += 10
             except Exception as e:
-                # Se o Flash falhar, tentamos o Pro como plano B automaticamente
-                st.info("Tentando modelo alternativo...")
-                try:
-                    model_alt = genai.GenerativeModel(model_name='models/gemini-pro')
-                    response = model_alt.generate_content(prompt)
-                    st.session_state.aula_atual = response.text
-                except:
-                    st.error(f"Erro persistente na API: {e}")
+                st.error(f"Erro ao chamar a IA: {e}")
+                st.info("Dica: Verifique se sua API Key no Google AI Studio tem acesso ao modelo Gemini 1.5 Flash.")
 
     if 'aula_atual' in st.session_state:
         st.markdown("---")
         texto = st.session_state.aula_atual
         if "|" in texto:
-            partes = texto.split("|")
-            ingles = partes[0].replace("Phrase:", "").strip()
-            portugues = partes[1].replace("Translation:", "").strip()
-            st.subheader("Como se diz:")
-            st.info(portugues)
-            if st.button("🔊 Ouvir em Inglês"):
-                play_audio(ingles)
-                st.success(f"Inglês: {ingles}")
+            try:
+                partes = texto.split("|")
+                ingles = partes[0].replace("Phrase:", "").strip()
+                portugues = partes[1].replace("Translation:", "").strip()
+                st.subheader("Como se diz:")
+                st.info(portugues)
+                if st.button("🔊 Ouvir em Inglês"):
+                    play_audio(ingles)
+                    st.success(f"Inglês: {ingles}")
+            except:
+                st.write(texto)
         else:
             st.write(texto)
-            
-            
