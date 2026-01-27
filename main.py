@@ -1,77 +1,74 @@
 import streamlit as st
 from gtts import gTTS
-import base64
 from io import BytesIO
 
-# --- FUNÇÃO PARA GERAR ÁUDIO ---
 def play_audio(text):
     tts = gTTS(text=text, lang='en')
     fp = BytesIO()
     tts.write_to_fp(fp)
-    audio_bytes = fp.getvalue()
-    st.audio(audio_bytes, format="audio/mp3")
+    st.audio(fp.getvalue(), format="audio/mp3")
 
-# --- INTERFACE ---
-st.set_page_config(page_title="LinguistAI", page_icon="🎧")
-st.title("🎧 LinguistAI: Teste Auditivo")
+# --- BANCO DE DADOS DE LIÇÕES ---
+db_lessons = {
+    "Business (Trabalho)": [
+        {"type": "repeat", "en": "Nice to meet you. I am the project manager.", "instruction": "Apresente-se formalmente:"},
+        {"type": "translate", "pt": "Você pode me enviar o relatório?", "en": "Can you send me the report?", "instruction": "Traduza para o Inglês:"},
+        {"type": "qa", "audio_en": "Are you available for a call at 3 PM?", "en": "3 PM", "instruction": "A IA te perguntou algo. Responda se está disponível às 3h:"},
+        {"type": "repeat", "en": "We need to brainstorm some new marketing strategies.", "instruction": "Repita este termo avançado (Brainstorm):"}
+    ],
+    "Travel (Viagem)": [
+        {"type": "repeat", "en": "Where is the boarding gate?", "instruction": "Pergunte sobre o portão de embarque:"},
+        {"type": "translate", "pt": "Eu gostaria de um copo de água.", "en": "I would like a glass of water.", "instruction": "Peça água em inglês:"}
+    ]
+}
 
-# Inicializa as variáveis de estado
+# --- LÓGICA DE NAVEGAÇÃO ---
 if 'step' not in st.session_state:
     st.session_state.step = 'objective'
-if 'level_passed' not in st.session_state:
-    st.session_state.level_passed = False
+if 'practice_idx' not in st.session_state:
+    st.session_state.practice_idx = 0
 
-# --- PASSO 1: OBJETIVO ---
+# --- TELA INICIAL ---
 if st.session_state.step == 'objective':
-    st.subheader("Qual seu objetivo principal?")
-    obj = st.selectbox("Escolha:", ["Business (Trabalho)", "Travel (Viagem)", "Social"])
-    if st.button("Iniciar Teste"):
+    st.title("💼 LinguistAI - Business Edition")
+    obj = st.selectbox("Selecione seu foco:", list(db_lessons.keys()))
+    if st.button("Começar Treinamento"):
         st.session_state.objective = obj
-        st.session_state.step = 'test_a2'
+        st.session_state.step = 'practice'
         st.rerun()
 
-# --- PASSO 2: TESTE A2 ---
-elif st.session_state.step == 'test_a2':
-    st.header("Nível A2 - Básico")
-    st.write("Ouça a frase e responda abaixo:")
+# --- TELA DE PRÁTICA ---
+elif st.session_state.step == 'practice':
+    content = db_lessons[st.session_state.objective]
+    idx = st.session_state.practice_idx
     
-    frase_a2 = "I am looking for the train station. Is it near here?"
-    play_audio(frase_a2) # Agora o player fica fixo na tela
-    
-    resposta = st.text_input("O que a pessoa está procurando?", key="ans_a2")
-    
-    if st.button("Verificar Resposta"):
-        if any(word in resposta.lower() for word in ["train", "trem", "estação", "station"]):
-            st.success("Correto! Você está pronto para o próximo nível.")
-            st.session_state.level_passed = True
-        else:
-            st.error("Incorreto. Tente ouvir novamente ou recomece.")
-
-    if st.session_state.level_passed:
-        if st.button("Avançar para Nível B2 ➡️"):
-            st.session_state.level_passed = False
-            st.session_state.step = 'test_b2'
-            st.rerun()
-
-# --- PASSO 3: TESTE B2 ---
-elif st.session_state.step == 'test_b2':
-    st.header("Nível B2 - Intermediário")
-    st.write("Ouça com atenção o contexto profissional:")
-    
-    frase_b2 = "We need to schedule a meeting to discuss the budget cuts for the next quarter."
-    play_audio(frase_b2)
-    
-    resposta_b2 = st.text_input("Qual o tema da reunião?", key="ans_b2")
-    
-    if st.button("Finalizar Teste"):
-        if any(word in resposta_b2.lower() for word in ["budget", "orçamento", "cuts", "cortes"]):
-            st.balloons()
-            st.success(f"Excelente! Seu nível é B2/C1 em {st.session_state.objective}.")
-        else:
-            st.warning("Você chegou longe! Seu nível é B1.")
+    if idx < len(content):
+        item = content[idx]
+        st.subheader(f"Lição {idx + 1} de {len(content)}")
+        st.info(item['instruction'])
         
-        if st.button("Recomeçar do Zero"):
-            st.session_state.step = 'objective'
-            st.session_state.level_passed = False
+        # Lógica por tipo de exercício
+        if item['type'] == 'repeat':
+            play_audio(item['en'])
+            st.write(f"🗣️ **Diga:** {item['en']}")
+        
+        elif item['type'] == 'translate':
+            st.write(f"🇧🇷 {item['pt']}")
+            resp = st.text_input("Sua resposta escrita (simulando fala):", key=f"input_{idx}")
+            if st.button("Check"):
+                if item['en'].lower() in resp.lower(): st.success("Perfeito!")
+                else: st.warning(f"O correto é: {item['en']}")
+
+        elif item['type'] == 'qa':
+            play_audio(item['audio_en'])
+            resp_qa = st.text_input("Sua resposta à pergunta:", key=f"qa_{idx}")
+
+        if st.button("Próxima Lição ➡️"):
+            st.session_state.practice_idx += 1
             st.rerun()
-            
+    else:
+        st.success("🎉 Você concluiu sua meta diária de Business English!")
+        if st.button("Voltar ao Menu"):
+            st.session_state.step = 'objective'
+            st.session_state.practice_idx = 0
+            st.rerun()
