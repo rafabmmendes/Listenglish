@@ -5,17 +5,17 @@ from io import BytesIO
 
 # --- CONFIGURAÇÃO DA IA ---
 try:
-    # Busca a chave nos Secrets do Streamlit
     if "GOOGLE_API_KEY" in st.secrets:
         api_key = st.secrets["GOOGLE_API_KEY"]
         genai.configure(api_key=api_key)
         
-        # USANDO O MODELO MAIS RECENTE E COMPATÍVEL
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        # USANDO O NOME TÉCNICO COMPLETO PARA EVITAR ERRO 404
+        # 'models/gemini-1.5-flash-latest' ou 'models/gemini-pro'
+        model = genai.GenerativeModel(model_name='models/gemini-1.5-flash-latest')
     else:
-        st.error("Chave 'GOOGLE_API_KEY' não encontrada nos Secrets do Streamlit.")
+        st.error("Chave 'GOOGLE_API_KEY' não encontrada nos Secrets.")
 except Exception as e:
-    st.error(f"Erro ao conectar com o Google: {e}")
+    st.error(f"Erro de conexão: {e}")
 
 def play_audio(text):
     try:
@@ -52,11 +52,10 @@ if st.session_state.step == 'setup':
 elif st.session_state.step == 'practice':
     st.title("🏋️ Área de Treinamento")
     
-    # BOTÃO DE GERAR
     if st.button("✨ Gerar Nova Lição"):
         with st.spinner("IA criando lição..."):
             try:
-                # Prompt simples para evitar erros de filtro
+                # Prompt direto e curto
                 prompt = f"Create 1 short English sentence for {st.session_state.obj}. Format: Phrase: [English] | Translation: [Portuguese]"
                 response = model.generate_content(prompt)
                 
@@ -64,9 +63,15 @@ elif st.session_state.step == 'practice':
                     st.session_state.aula_atual = response.text
                     st.session_state.xp += 10
             except Exception as e:
-                st.error(f"Erro técnico: {e}")
+                # Se o Flash falhar, tentamos o Pro como plano B automaticamente
+                st.info("Tentando modelo alternativo...")
+                try:
+                    model_alt = genai.GenerativeModel(model_name='models/gemini-pro')
+                    response = model_alt.generate_content(prompt)
+                    st.session_state.aula_atual = response.text
+                except:
+                    st.error(f"Erro persistente na API: {e}")
 
-    # EXIBIÇÃO
     if 'aula_atual' in st.session_state:
         st.markdown("---")
         texto = st.session_state.aula_atual
@@ -74,10 +79,8 @@ elif st.session_state.step == 'practice':
             partes = texto.split("|")
             ingles = partes[0].replace("Phrase:", "").strip()
             portugues = partes[1].replace("Translation:", "").strip()
-            
             st.subheader("Como se diz:")
             st.info(portugues)
-            
             if st.button("🔊 Ouvir em Inglês"):
                 play_audio(ingles)
                 st.success(f"Inglês: {ingles}")
