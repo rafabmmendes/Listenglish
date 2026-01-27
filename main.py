@@ -28,7 +28,8 @@ def chamar_ia(prompt):
     try:
         completion = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
-            messages=[{"role": "user", "content": prompt}]
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.8 # Aumentado para garantir frases diferentes
         )
         return completion.choices[0].message.content
     except Exception as e:
@@ -43,18 +44,7 @@ def play_audio(text):
     except:
         st.warning("Áudio indisponível.")
 
-# --- 3. LÓGICA DE TROCA DE PERGUNTA (CALLBACK) ---
-def proxima_pergunta():
-    prompt = (f"Gere uma frase curta em inglês nível {st.session_state.nivel} sobre {st.session_state.obj_selecionado}. "
-              f"Formato: Phrase: [Inglês] | Translation: [Português]")
-    res = chamar_ia(prompt)
-    if "|" in res:
-        st.session_state.aula_atual = res
-        st.session_state.feedback = None
-        st.session_state.texto_falado = None
-        st.session_state.mic_key += 1
-
-# --- 4. ESTADO DA SESSÃO ---
+# --- 3. ESTADO DA SESSÃO ---
 if 'step' not in st.session_state: st.session_state.step = 'objetivo'
 if 'nivel' not in st.session_state: st.session_state.nivel = 'A1'
 if 'xp' not in st.session_state: st.session_state.xp = 0
@@ -63,7 +53,7 @@ if 'mic_key' not in st.session_state: st.session_state.mic_key = 0
 if 'feedback' not in st.session_state: st.session_state.feedback = None
 if 'texto_falado' not in st.session_state: st.session_state.texto_falado = None
 
-# --- 5. FLUXO DE TELAS ---
+# --- 4. FLUXO DE TELAS ---
 
 if st.session_state.step == 'objetivo':
     st.title("🎯 Escolha seu Objetivo")
@@ -79,6 +69,8 @@ elif st.session_state.step == 'teste_nivel':
     if st.button("Finalizar Teste"):
         st.session_state.nivel = "A2" if pergunta == "I like coffee" else "A1"
         st.session_state.step = 'pratica'
+        # Gerar a primeira frase automaticamente ao entrar na prática
+        st.session_state.aula_atual = None 
         st.rerun()
 
 elif st.session_state.step == 'pratica':
@@ -92,9 +84,26 @@ elif st.session_state.step == 'pratica':
 
     st.title("🗣️ Pratique sua Fala")
 
-    # BOTÃO ATUALIZADO COM CALLBACK (Executa a função de trocar)
-    st.button("⏭️ Próxima Pergunta", type="primary", on_click=proxima_pergunta)
+    # LÓGICA DE GERAR NOVA PERGUNTA
+    if st.button("⏭️ Próxima Pergunta", type="primary") or st.session_state.aula_atual is None:
+        with st.spinner("IA Gerando nova frase..."):
+            # 1. Limpamos o estado antigo para forçar o refresh
+            st.session_state.aula_atual = None
+            st.session_state.feedback = None
+            st.session_state.texto_falado = None
+            
+            # 2. Geramos a nova frase com um identificador único (random) para evitar cache
+            random_id = random.randint(1, 1000)
+            prompt = (f"ID:{random_id} - Gere uma frase curta em inglês nível {st.session_state.nivel} sobre {st.session_state.obj_selecionado}. "
+                      f"Formato obrigatório: Phrase: [Inglês] | Translation: [Português]")
+            
+            nova_aula = chamar_ia(prompt)
+            if "|" in nova_aula:
+                st.session_state.aula_atual = nova_aula
+                st.session_state.mic_key += 1
+                st.rerun()
 
+    # EXIBIÇÃO DA LIÇÃO
     if st.session_state.aula_atual:
         try:
             texto = st.session_state.aula_atual
@@ -105,7 +114,7 @@ elif st.session_state.step == 'pratica':
             if st.button("🔊 Ouvir Original"):
                 play_audio(ing)
 
-            st.write("### 🎤 Grave agora:")
+            st.write("### 🎤 Sua vez:")
             audio = mic_recorder(
                 start_prompt="Gravar", 
                 stop_prompt="Parar", 
@@ -117,7 +126,7 @@ elif st.session_state.step == 'pratica':
                     fala = transcrever_audio(audio['bytes'])
                     if fala:
                         st.session_state.texto_falado = fala
-                        p_corr = f"O aluno disse '{fala}' para a frase '{ing}'. Dê feedback e se estiver certo diga CORRETO."
+                        p_corr = f"O aluno disse '{fala}' para '{ing}'. Dê feedback e se estiver certo diga CORRETO."
                         st.session_state.feedback = chamar_ia(p_corr)
                         if "CORRETO" in st.session_state.feedback.upper():
                             st.session_state.xp += 25
@@ -135,5 +144,6 @@ elif st.session_state.step == 'pratica':
                 idx = niveis.index(st.session_state.nivel)
                 if idx < len(niveis)-1:
                     st.session_state.nivel = niveis[idx+1]
+                    st.success(f"Nível UP: {st.session_state.nivel}")
         except:
-            st.error("Erro ao carregar lição. Clique em Próxima.")
+            st.error("Erro ao carregar lição. Tente 'Próxima Pergunta'.")
