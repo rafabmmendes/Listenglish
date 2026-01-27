@@ -4,16 +4,15 @@ from gtts import gTTS
 from io import BytesIO
 import random
 
-# --- CONFIGURAÇÃO ROBUSTA ---
+# --- CONFIGURAÇÃO ---
 try:
-    if "GOOGLE_API_KEY" in st.secrets:
-        genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-        # Mudamos para o nome de modelo mais estável e universal
-        model = genai.GenerativeModel('gemini-1.5-flash')
-    else:
-        st.error("Chave não encontrada nos Secrets.")
+    # Busca a chave nos Secrets do Streamlit Cloud
+    api_key = st.secrets.get("GOOGLE_API_KEY", "")
+    genai.configure(api_key=api_key)
+    # Modelo Flash: mais rápido e com maior cota gratuita
+    model = genai.GenerativeModel('gemini-1.5-flash')
 except Exception as e:
-    st.error(f"Erro de conexão: {e}")
+    st.error(f"Erro de Configuração: {e}")
 
 def play_audio(text):
     try:
@@ -22,7 +21,7 @@ def play_audio(text):
         tts.write_to_fp(fp)
         st.audio(fp.getvalue(), format="audio/mp3")
     except:
-        st.warning("Áudio indisponível no momento.")
+        st.warning("⚠️ O player de áudio falhou.")
 
 # --- ESTADO DO APP ---
 if 'step' not in st.session_state: st.session_state.step = 'setup'
@@ -32,81 +31,74 @@ if 'xp' not in st.session_state: st.session_state.xp = 0
 # --- SIDEBAR ---
 with st.sidebar:
     st.title("👤 Seu Perfil")
-    st.write(f"**Nível:** {st.session_state.nivel}")
+    st.metric("Nível", st.session_state.nivel)
     st.write(f"**XP:** {st.session_state.xp}")
-    if st.button("Reiniciar App"):
+    st.progress(min(st.session_state.xp / 100, 1.0))
+    if st.button("🔄 Reiniciar App"):
         for key in list(st.session_state.keys()): del st.session_state[key]
         st.rerun()
 
-# --- TELA 1: SETUP ---
+# --- TELAS ---
+
+# TELA 1: SETUP
 if st.session_state.step == 'setup':
     st.title("🚀 LinguistAI")
-    obj = st.selectbox("Escolha seu objetivo:", ["Business", "Travel", "Social"])
-    
+    obj = st.selectbox("Seu objetivo:", ["Business (Trabalho)", "Travel (Viagem)", "Social"])
     if st.button("Iniciar Teste de Nível"):
         st.session_state.obj = obj
-        with st.spinner("Preparando teste..."):
+        with st.spinner("IA preparando desafio..."):
             try:
-                seed = random.randint(1, 1000)
-                prompt = f"Generate 1 short B1 level English sentence about {obj}. Seed {seed}. Return ONLY the sentence."
-                response = model.generate_content(prompt)
-                st.session_state.frase_teste = response.text
+                # Prompt para frase de teste aleatória
+                res = model.generate_content(f"Generate 1 unique English sentence about {obj} for a B1 level test.")
+                st.session_state.frase_teste = res.text
             except:
-                # PLANO B: Se a IA der erro 404 de novo, usamos uma frase fixa para o app não travar
-                st.session_state.frase_teste = "I would like to improve my English skills for my future career."
-            
+                st.session_state.frase_teste = "I need to check my schedule before the next meeting."
             st.session_state.step = 'test'
             st.rerun()
 
-# --- TELA 2: TESTE DE NÍVEL ---
+# TELA 2: TESTE DE NÍVEL
 elif st.session_state.step == 'test':
-    st.title("🎤 Teste de Nivelamento")
-    st.info("Ouça a frase abaixo e escreva o que entendeu.")
+    st.title("🎤 Teste de Nível")
+    st.write("Ouça e escreva o que entendeu:")
+    play_audio(st.session_state.frase_teste)
     
-    if 'frase_teste' in st.session_state:
-        play_audio(st.session_state.frase_teste)
-        
-        res_user = st.text_input("Sua resposta (Inglês ou Português):")
-        
-        if st.button("Avaliar Nível"):
-            if res_user:
-                with st.spinner("Analisando..."):
-                    try:
-                        prompt_eval = f"User heard '{st.session_state.frase_teste}' and understood '{res_user}'. Based on CEFR, return only the code: A1, A2, B1, B2 or C1."
-                        nivel = model.generate_content(prompt_eval).text.strip()
-                        st.session_state.nivel = nivel[:2] # Pega só os 2 primeiros caracteres (ex: B1)
-                    except:
-                        st.session_state.nivel = "B1" # Nível padrão caso a IA falhe
-                    
-                    st.session_state.step = 'practice'
-                    st.rerun()
-            else:
-                st.warning("Por favor, escreva algo.")
-
-# --- TELA 3: PRÁTICA ---
-elif st.session_state.step == 'practice':
-    st.title("🏋️ Treinamento")
-    st.success(f"Nível atual: {st.session_state.nivel}")
-
-    if st.button("✨ Gerar Nova Lição"):
-        with st.spinner("Criando..."):
+    resposta = st.text_input("Sua resposta:")
+    if st.button("Finalizar Teste"):
+        with st.spinner("Avaliando..."):
             try:
+                # IA define o nível do usuário
+                prompt_eval = f"User understood '{resposta}' for the phrase '{st.session_state.frase_teste}'. Return only the CEFR level: A1, A2, B1, B2, or C1."
+                result = model.generate_content(prompt_eval).text.strip()
+                st.session_state.nivel = result[:2]
+            except:
+                st.session_state.nivel = "B1" # Fallback
+            st.session_state.step = 'practice'
+            st.rerun()
+
+# TELA 3: PRÁTICA INFINITA
+elif st.session_state.step == 'practice':
+    st.title("🏋️ Prática")
+    
+    if st.button("✨ Gerar Nova Lição"):
+        with st.spinner("IA criando frase inédita..."):
+            try:
+                # Uso de seed aleatória para evitar repetição
                 seed = random.randint(1, 10000)
-                prompt = f"Create a UNIQUE English sentence for level {st.session_state.nivel} about {st.session_state.obj}. Format: Phrase: [English] | Translation: [Portuguese]. Seed: {seed}"
+                prompt = f"Create a UNIQUE English phrase level {st.session_state.nivel} for {st.session_state.obj}. Seed {seed}. Format: Phrase: [English] | Translation: [Portuguese]"
                 response = model.generate_content(prompt)
                 st.session_state.aula_atual = response.text
                 st.session_state.xp += 10
-            except:
-                st.error("Erro na IA. Tente gerar novamente em alguns segundos.")
+            except Exception as e:
+                st.error("Cota atingida! Aguarde 30 segundos ou tente novamente.")
 
     if 'aula_atual' in st.session_state:
         st.markdown("---")
         if "|" in st.session_state.aula_atual:
-            ingles = st.session_state.aula_atual.split("|")[0].replace("Phrase:", "").strip()
-            portugues = st.session_state.aula_atual.split("|")[1].replace("Translation:", "").strip()
+            partes = st.session_state.aula_atual.split("|")
+            ingles = partes[0].replace("Phrase:", "").strip()
+            portugues = partes[1].replace("Translation:", "").strip()
             
-            st.subheader("Como se diz:")
-            st.write(f"💡 *{portugues}*")
-            if st.button("🔊 Ouvir Pronúncia"):
+            st.write(f"**Como se diz:** {portugues}")
+            if st.button("🔊 Ouvir Resposta"):
                 play_audio(ingles)
                 st.success(f"**Inglês:** {ingles}")
