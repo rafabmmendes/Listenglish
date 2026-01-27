@@ -1,6 +1,23 @@
 import streamlit as st
 from gtts import gTTS
 from io import BytesIO
+import google.generativeai as genai # Biblioteca da IA
+
+# --- CONFIGURAÇÃO DA IA ---
+# Você consegue sua chave em: https://aistudio.google.com/
+genai.configure(api_key="SUA_CHAVE_AQUI")
+model = genai.GenerativeModel('gemini-pro')
+
+def gerar_licao_ia(objetivo, nivel):
+    prompt = f"""
+    Gere uma lição de inglês para o objetivo {objetivo} no nível {nivel} de Cambridge.
+    Retorne apenas no formato:
+    Frase em Inglês: [frase]
+    Tradução: [tradução]
+    Instrução: [instrução de o que fazer]
+    """
+    response = model.generate_content(prompt)
+    return response.text
 
 def play_audio(text):
     tts = gTTS(text=text, lang='en')
@@ -8,67 +25,32 @@ def play_audio(text):
     tts.write_to_fp(fp)
     st.audio(fp.getvalue(), format="audio/mp3")
 
-# --- BANCO DE DADOS DE LIÇÕES ---
-db_lessons = {
-    "Business (Trabalho)": [
-        {"type": "repeat", "en": "Nice to meet you. I am the project manager.", "instruction": "Apresente-se formalmente:"},
-        {"type": "translate", "pt": "Você pode me enviar o relatório?", "en": "Can you send me the report?", "instruction": "Traduza para o Inglês:"},
-        {"type": "qa", "audio_en": "Are you available for a call at 3 PM?", "en": "3 PM", "instruction": "A IA te perguntou algo. Responda se está disponível às 3h:"},
-        {"type": "repeat", "en": "We need to brainstorm some new marketing strategies.", "instruction": "Repita este termo avançado (Brainstorm):"}
-    ],
-    "Travel (Viagem)": [
-        {"type": "repeat", "en": "Where is the boarding gate?", "instruction": "Pergunte sobre o portão de embarque:"},
-        {"type": "translate", "pt": "Eu gostaria de um copo de água.", "en": "I would like a glass of water.", "instruction": "Peça água em inglês:"}
-    ]
-}
+# --- INTERFACE ---
+st.title("🤖 LinguistAI: Lições Infinitas com IA")
 
-# --- LÓGICA DE NAVEGAÇÃO ---
-if 'step' not in st.session_state:
-    st.session_state.step = 'objective'
-if 'practice_idx' not in st.session_state:
-    st.session_state.practice_idx = 0
+if 'licao_atual' not in st.session_state:
+    st.session_state.licao_atual = None
 
-# --- TELA INICIAL ---
-if st.session_state.step == 'objective':
-    st.title("💼 LinguistAI - Business Edition")
-    obj = st.selectbox("Selecione seu foco:", list(db_lessons.keys()))
-    if st.button("Começar Treinamento"):
-        st.session_state.objective = obj
-        st.session_state.step = 'practice'
-        st.rerun()
+# Seleção de Nível e Objetivo
+col1, col2 = st.columns(2)
+with col1:
+    obj = st.selectbox("Foco:", ["Marketing", "Medicina", "TI", "Viagem", "Vendas"])
+with col2:
+    nivel = st.selectbox("Nível:", ["A2", "B1", "B2", "C1"])
 
-# --- TELA DE PRÁTICA ---
-elif st.session_state.step == 'practice':
-    content = db_lessons[st.session_state.objective]
-    idx = st.session_state.practice_idx
+if st.button("Gerar Nova Lição Personalizada ✨"):
+    with st.spinner('A IA está criando sua lição...'):
+        st.session_state.licao_atual = gerar_licao_ia(obj, nivel)
+
+# Exibição da Lição Gerada pela IA
+if st.session_state.licao_atual:
+    st.markdown("---")
+    st.write(st.session_state.licao_atual)
     
-    if idx < len(content):
-        item = content[idx]
-        st.subheader(f"Lição {idx + 1} de {len(content)}")
-        st.info(item['instruction'])
-        
-        # Lógica por tipo de exercício
-        if item['type'] == 'repeat':
-            play_audio(item['en'])
-            st.write(f"🗣️ **Diga:** {item['en']}")
-        
-        elif item['type'] == 'translate':
-            st.write(f"🇧🇷 {item['pt']}")
-            resp = st.text_input("Sua resposta escrita (simulando fala):", key=f"input_{idx}")
-            if st.button("Check"):
-                if item['en'].lower() in resp.lower(): st.success("Perfeito!")
-                else: st.warning(f"O correto é: {item['en']}")
-
-        elif item['type'] == 'qa':
-            play_audio(item['audio_en'])
-            resp_qa = st.text_input("Sua resposta à pergunta:", key=f"qa_{idx}")
-
-        if st.button("Próxima Lição ➡️"):
-            st.session_state.practice_idx += 1
-            st.rerun()
-    else:
-        st.success("🎉 Você concluiu sua meta diária de Business English!")
-        if st.button("Voltar ao Menu"):
-            st.session_state.step = 'objective'
-            st.session_state.practice_idx = 0
-            st.rerun()
+    # Extrair a frase em inglês para o áudio (lógica simples de busca de texto)
+    try:
+        frase_en = st.session_state.licao_atual.split("Frase em Inglês:")[1].split("\n")[0]
+        if st.button("🔊 Ouvir Pronúncia da IA"):
+            play_audio(frase_en)
+    except:
+        st.write("Erro ao processar áudio. Tente gerar outra lição.")
