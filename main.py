@@ -3,6 +3,7 @@ from groq import Groq
 from gtts import gTTS
 from io import BytesIO
 import random
+import time
 from streamlit_mic_recorder import mic_recorder
 
 # --- 1. CONFIGURAÇÃO ---
@@ -29,7 +30,7 @@ def chamar_ia(prompt):
         completion = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.8 # Aumentado para garantir frases diferentes
+            temperature=0.9 # Alta criatividade para frases infinitas
         )
         return completion.choices[0].message.content
     except Exception as e:
@@ -57,7 +58,7 @@ if 'texto_falado' not in st.session_state: st.session_state.texto_falado = None
 
 if st.session_state.step == 'objetivo':
     st.title("🎯 Escolha seu Objetivo")
-    obj = st.selectbox("Foco do curso:", ["Business", "Travel", "Social"])
+    obj = st.selectbox("Foco do curso:", ["Business", "Travel", "Social Conversations", "Job Interview"])
     if st.button("Iniciar Teste ➡️"):
         st.session_state.obj_selecionado = obj
         st.session_state.step = 'teste_nivel'
@@ -65,85 +66,89 @@ if st.session_state.step == 'objetivo':
 
 elif st.session_state.step == 'teste_nivel':
     st.title("📝 Teste Rápido")
-    pergunta = st.radio("Como se diz 'Eu gosto de café'?", ["I like coffee", "I likes coffee"])
+    pergunta = st.radio("Traduza: 'Eu estou estudando'", ["I am studying", "I study"])
     if st.button("Finalizar Teste"):
-        st.session_state.nivel = "A2" if pergunta == "I like coffee" else "A1"
+        st.session_state.nivel = "A2" if pergunta == "I am studying" else "A1"
         st.session_state.step = 'pratica'
-        # Gerar a primeira frase automaticamente ao entrar na prática
-        st.session_state.aula_atual = None 
         st.rerun()
 
 elif st.session_state.step == 'pratica':
     with st.sidebar:
-        st.title("👤 Perfil")
+        st.title("👤 Perfil Infinito")
         st.write(f"Nível: **{st.session_state.nivel}**")
+        st.write(f"Objetivo: **{st.session_state.obj_selecionado}**")
         st.progress(st.session_state.xp / 100 if st.session_state.xp < 100 else 1.0)
-        if st.button("🔄 Reiniciar"):
+        if st.button("🔄 Reiniciar App"):
             st.session_state.step = 'objetivo'
             st.rerun()
 
-    st.title("🗣️ Pratique sua Fala")
+    st.title("🗣️ Treino de Fala Contínuo")
 
-    # LÓGICA DE GERAR NOVA PERGUNTA
+    # LÓGICA DE GERAÇÃO INFINITA
     if st.button("⏭️ Próxima Pergunta", type="primary") or st.session_state.aula_atual is None:
-        with st.spinner("IA Gerando nova frase..."):
-            # 1. Limpamos o estado antigo para forçar o refresh
-            st.session_state.aula_atual = None
+        with st.spinner("IA criando um novo desafio único..."):
+            st.session_state.aula_atual = None # Limpa para garantir refresh
             st.session_state.feedback = None
             st.session_state.texto_falado = None
             
-            # 2. Geramos a nova frase com um identificador único (random) para evitar cache
-            random_id = random.randint(1, 1000)
-            prompt = (f"ID:{random_id} - Gere uma frase curta em inglês nível {st.session_state.nivel} sobre {st.session_state.obj_selecionado}. "
-                      f"Formato obrigatório: Phrase: [Inglês] | Translation: [Português]")
+            # Seed aleatória para garantir frases infinitas e diferentes
+            seed = random.randint(1, 999999)
+            prompt = (f"Seed:{seed}. Gere uma frase ÚNICA e DIFERENTE em inglês nível {st.session_state.nivel} "
+                      f"sobre {st.session_state.obj_selecionado}. "
+                      f"Formato: Phrase: [Inglês] | Translation: [Português]")
             
-            nova_aula = chamar_ia(prompt)
-            if "|" in nova_aula:
-                st.session_state.aula_atual = nova_aula
-                st.session_state.mic_key += 1
+            nova_frase = chamar_ia(prompt)
+            if "|" in nova_frase:
+                st.session_state.aula_atual = nova_frase
+                st.session_state.mic_key += 1 # Reseta o microfone
                 st.rerun()
 
-    # EXIBIÇÃO DA LIÇÃO
+    # EXIBIÇÃO DA PERGUNTA
     if st.session_state.aula_atual:
         try:
             texto = st.session_state.aula_atual
             ing = texto.split("|")[0].split("Phrase:")[-1].replace("[","").replace("]","").strip()
             pt = texto.split("|")[1].split("Translation:")[-1].replace("[","").replace("]","").strip()
             
-            st.info(f"**Traduza:** {pt}")
-            if st.button("🔊 Ouvir Original"):
+            st.info(f"**Como se diz em inglês:** {pt}")
+            if st.button("🔊 Ouvir Resposta Correta"):
                 play_audio(ing)
 
-            st.write("### 🎤 Sua vez:")
+            # MICROFONE
+            st.write("---")
+            st.write("### 🎤 Grave sua voz:")
             audio = mic_recorder(
-                start_prompt="Gravar", 
-                stop_prompt="Parar", 
+                start_prompt="Clique para Gravar", 
+                stop_prompt="Parar e Analisar", 
                 key=f"mic_{st.session_state.mic_key}"
             )
 
             if audio:
-                with st.spinner("Analisando..."):
+                with st.spinner("Processando áudio..."):
                     fala = transcrever_audio(audio['bytes'])
                     if fala:
                         st.session_state.texto_falado = fala
-                        p_corr = f"O aluno disse '{fala}' para '{ing}'. Dê feedback e se estiver certo diga CORRETO."
+                        p_corr = f"O aluno disse '{fala}' para a frase '{ing}'. Corrija a pronúncia e gramática em Português. Se estiver correto, comece com a palavra CORRETO."
                         st.session_state.feedback = chamar_ia(p_corr)
                         if "CORRETO" in st.session_state.feedback.upper():
-                            st.session_state.xp += 25
+                            st.session_state.xp += 20
 
+            # FEEDBACK
             if st.session_state.texto_falado:
                 st.write(f"🗣️ **Você disse:** {st.session_state.texto_falado}")
                 if st.session_state.feedback:
-                    st.write(f"📝 **Feedback:** {st.session_state.feedback}")
+                    st.write(f"📝 **Análise da IA:** {st.session_state.feedback}")
                 st.write(f"✅ **Gabarito:** {ing}")
                 
-            if st.session_state.xp >= 100:
-                st.balloons()
-                st.session_state.xp = 0
-                niveis = ["A1", "A2", "B1", "B2", "C1"]
-                idx = niveis.index(st.session_state.nivel)
-                if idx < len(niveis)-1:
-                    st.session_state.nivel = niveis[idx+1]
-                    st.success(f"Nível UP: {st.session_state.nivel}")
-        except:
-            st.error("Erro ao carregar lição. Tente 'Próxima Pergunta'.")
+                # Evolução infinita de níveis
+                if st.session_state.xp >= 100:
+                    st.balloons()
+                    st.session_state.xp = 0
+                    niveis = ["A1", "A2", "B1", "B2", "C1", "C2"]
+                    idx = niveis.index(st.session_state.nivel)
+                    if idx < len(niveis)-1:
+                        st.session_state.nivel = niveis[idx+1]
+                        st.success(f"UAU! Você alcançou o nível {st.session_state.nivel}!")
+
+        except Exception as e:
+            st.error("Erro ao gerar lição.
