@@ -1,3 +1,4 @@
 streamlit
 gtts
 google-generativeai
+streamlit-mic-recorder
