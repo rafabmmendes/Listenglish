@@ -45,8 +45,11 @@ def play_audio(text):
         st.warning("Áudio indisponível.")
 
 # --- 3. ESTADO DA SESSÃO ---
+# Lista de níveis personalizada por você
+niveis_lista = ["Begginer", "basic", "intermediate", "advanced", "professional", "fluenty"]
+
 if 'step' not in st.session_state: st.session_state.step = 'objetivo'
-if 'nivel' not in st.session_state: st.session_state.nivel = 'A1'
+if 'nivel' not in st.session_state: st.session_state.nivel = 'Begginer'
 if 'xp' not in st.session_state: st.session_state.xp = 0
 if 'aula_atual' not in st.session_state: st.session_state.aula_atual = None
 if 'mic_key' not in st.session_state: st.session_state.mic_key = 0
@@ -67,14 +70,16 @@ elif st.session_state.step == 'teste_nivel':
     st.title("📝 Teste de Nível")
     pergunta = st.radio("Como se diz 'Eu tenho um carro'?", ["I have a car", "I has a car"])
     if st.button("Finalizar Teste"):
-        st.session_state.nivel = "A2" if pergunta == "I have a car" else "A1"
+        # Se acertar, pula para 'basic', se errar fica no 'Begginer'
+        st.session_state.nivel = "basic" if pergunta == "I have a car" else "Begginer"
         st.session_state.step = 'pratica'
         st.rerun()
 
 elif st.session_state.step == 'pratica':
     with st.sidebar:
-        st.title("👤 Perfil")
-        st.write(f"Nível: **{st.session_state.nivel}**")
+        st.title("👤 Seu Perfil")
+        st.info(f"Nível: **{st.session_state.nivel}**")
+        st.write(f"XP: {st.session_state.xp}/100")
         st.progress(st.session_state.xp / 100 if st.session_state.xp < 100 else 1.0)
         if st.button("🔄 Reiniciar App"):
             st.session_state.step = 'objetivo'
@@ -88,9 +93,8 @@ elif st.session_state.step == 'pratica':
             st.session_state.feedback = None
             st.session_state.texto_falado = None
             
-            # Seed aleatória para garantir que as frases nunca se repitam
             seed = random.randint(1, 999999)
-            prompt = (f"Seed:{seed}. Gere uma frase única em inglês nível {st.session_state.nivel} "
+            prompt = (f"Seed:{seed}. Gere uma frase única em inglês para nível {st.session_state.nivel} "
                       f"sobre {st.session_state.obj_selecionado}. "
                       f"Responda APENAS no formato: Phrase: [Inglês] | Translation: [Português]")
             
@@ -106,22 +110,23 @@ elif st.session_state.step == 'pratica':
             ing = texto.split("|")[0].split("Phrase:")[-1].replace("[","").replace("]","").strip()
             pt = texto.split("|")[1].split("Translation:")[-1].replace("[","").replace("]","").strip()
             
-            st.info(f"**Traduza para o inglês:** {pt}")
+            st.info(f"**Traduza:** {pt}")
             if st.button("🔊 Ouvir Resposta"):
                 play_audio(ing)
 
-            st.write("### 🎤 Sua vez:")
+            st.write("---")
+            st.write("### 🎤 Grave sua voz:")
             audio = mic_recorder(start_prompt="Gravar", stop_prompt="Parar", key=f"mic_{st.session_state.mic_key}")
 
             if audio:
-                with st.spinner("Corrigindo..."):
+                with st.spinner("Analisando pronúncia..."):
                     fala = transcrever_audio(audio['bytes'])
                     if fala:
                         st.session_state.texto_falado = fala
                         p_corr = f"O aluno disse '{fala}' para a frase '{ing}'. Dê um feedback curto. Se estiver certo, diga CORRETO."
                         st.session_state.feedback = chamar_ia(p_corr)
                         if "CORRETO" in st.session_state.feedback.upper():
-                            st.session_state.xp += 20
+                            st.session_state.xp += 25
 
             if st.session_state.texto_falado:
                 st.write(f"🗣️ **Você disse:** {st.session_state.texto_falado}")
@@ -129,15 +134,14 @@ elif st.session_state.step == 'pratica':
                     st.write(f"📝 **Feedback:** {st.session_state.feedback}")
                 st.write(f"✅ **Gabarito:** {ing}")
                 
-            # Evolução de Nível CEFR
+            # Lógica de Nível Up com a nova lista
             if st.session_state.xp >= 100:
                 st.balloons()
                 st.session_state.xp = 0
-                niveis = ["A1", "A2", "B1", "B2", "C1", "C2"]
-                idx = niveis.index(st.session_state.nivel)
-                if idx < len(niveis)-1:
-                    st.session_state.nivel = niveis[idx+1]
-                    st.success(f"Parabéns! Você subiu para o nível {st.session_state.nivel}!")
+                idx = niveis_lista.index(st.session_state.nivel)
+                if idx < len(niveis_lista) - 1:
+                    st.session_state.nivel = niveis_lista[idx + 1]
+                    st.success(f"Excelente! Você agora é nível {st.session_state.nivel}!")
 
         except Exception as e:
             st.error("Erro ao processar lição. Clique em Próxima Pergunta.")
