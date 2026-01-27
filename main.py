@@ -7,15 +7,13 @@ from streamlit_mic_recorder import mic_recorder
 
 # --- 1. CONFIGURAÇÃO DA API ---
 try:
-    # Certifique-se de que a chave GROQ_API_KEY está nos Secrets do Streamlit
     client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 except Exception as e:
-    st.error("Erro na API Key do Groq. Verifique as configurações de Secrets.")
+    st.error("Erro na API Key do Groq. Verifique os Secrets no Streamlit.")
 
-# --- 2. FUNÇÕES DE IA (GROQ) ---
+# --- 2. FUNÇÕES DE SUPORTE ---
 
 def transcrever_audio(audio_bytes):
-    """Transforma o áudio gravado em texto usando Whisper Turbo"""
     try:
         transcription = client.audio.transcriptions.create(
             file=("audio.wav", audio_bytes),
@@ -27,134 +25,132 @@ def transcrever_audio(audio_bytes):
         st.error(f"Erro na transcrição: {e}")
         return None
 
-def corrigir_fala(texto_usuario, frase_correta):
-    """Compara o que foi dito com o gabarito usando Llama 3.3"""
-    prompt = (
-        f"O aluno deveria dizer: '{frase_correta}'. "
-        f"O aluno disse: '{texto_usuario}'. "
-        f"Avalie a precisão e dê um feedback curto em Português. "
-        f"Se estiver correto ou muito próximo, comece a resposta com a palavra 'CORRETO'."
-    )
+def chamar_ia(prompt):
     try:
         completion = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.5
+            temperature=0.7
         )
         return completion.choices[0].message.content
     except Exception as e:
-        return f"Erro na análise: {e}"
+        return f"Erro: {e}"
 
 def play_audio(text):
-    """Gera áudio da frase correta para referência (gTTS)"""
     try:
         tts = gTTS(text=text, lang='en')
         fp = BytesIO()
         tts.write_to_fp(fp)
         st.audio(fp.getvalue(), format="audio/mp3")
     except:
-        st.warning("Player de áudio indisponível.")
+        st.warning("Áudio indisponível.")
 
 # --- 3. ESTADO DA SESSÃO ---
+if 'step' not in st.session_state: st.session_state.step = 'objetivo'
 if 'nivel' not in st.session_state: st.session_state.nivel = 'A1'
 if 'xp' not in st.session_state: st.session_state.xp = 0
 if 'aula_atual' not in st.session_state: st.session_state.aula_atual = None
-if 'feedback' not in st.session_state: st.session_state.feedback = None
-if 'texto_falado' not in st.session_state: st.session_state.texto_falado = None
 
-# --- 4. INTERFACE LATERAL (PROGRESSO) ---
-with st.sidebar:
-    st.title("👤 Seu Perfil")
-    st.metric("Nível Atual", st.session_state.nivel)
-    st.write(f"XP para o próximo nível: {st.session_state.xp}/100")
-    st.progress(st.session_state.xp / 100)
+# --- 4. TELAS DO SISTEMA ---
+
+# TELA 1: DEFINIÇÃO DE OBJETIVOS
+if st.session_state.step == 'objetivo':
+    st.title("🎯 Escolha seu Objetivo")
+    objetivo = st.selectbox("O que você quer focar?", 
+                            ["Inglês para Negócios (Business)", 
+                             "Viagens (Travel)", 
+                             "Conversação Social", 
+                             "Preparação para Entrevistas"])
     
-    if st.button("🔄 Reiniciar Tudo"):
-        for key in list(st.session_state.keys()): del st.session_state[key]
+    if st.button("Próximo: Teste de Nível ➡️"):
+        st.session_state.obj_selecionado = objetivo
+        st.session_state.step = 'teste_nivel'
         st.rerun()
 
-# --- 5. ÁREA DE PRÁTICA
-st.title("🎙️ Prática de Inglês (Groq Speed)")
+# TELA 2: TESTE DE NIVELAMENTO
+elif st.session_state.step == 'teste_nivel':
+    st.title("📝 Teste de Nivelamento")
+    st.write("Responda rapidamente para sabermos seu nível:")
+    
+    pergunta = st.radio("Como se diz 'Eu estou trabalhando agora'?", 
+                        ["I work now", "I am working now", "I working now"])
+    
+    if st.button("Finalizar Teste"):
+        if pergunta == "I am working now":
+            st.session_state.nivel = "A2"
+            st.success("Bom trabalho! Você começa no Nível A2.")
+        else:
+            st.session_state.nivel = "A1"
+            st.info("Vamos começar do básico: Nível A1.")
+        
+        st.session_state.step = 'pratica'
+        st.balloons()
+        st.rerun()
 
-# Botão de Avançar / Gerar
-if st.button("⏭️ Próxima Pergunta", type="primary"):
-    with st.spinner("Gerando novo desafio..."):
+# TELA 3: ÁREA DE PRÁTICA (SPEAKING)
+elif st.session_state.step == 'pratica':
+    # SIDEBAR
+    with st.sidebar:
+        st.title("👤 Seu Perfil")
+        st.write(f"**Objetivo:** {st.session_state.obj_selecionado}")
+        st.metric("Nível Atual", st.session_state.nivel)
+        st.progress(st.session_state.xp / 100)
+        if st.button("🔄 Reiniciar Curso"):
+            st.session_state.step = 'objetivo'
+            st.rerun()
+
+    st.title("🎙️ Treino de Fala")
+
+    if st.button("⏭️ Próxima Pergunta", type="primary"):
+        with st.spinner("IA Gerando lição..."):
+            prompt = (f"Crie uma frase em inglês nível {st.session_state.nivel} sobre {st.session_state.obj_selecionado}. "
+                      f"Responda APENAS: Phrase: [Inglês] | Translation: [Português]")
+            st.session_state.aula_atual = chamar_ia(prompt)
+            st.session_state.feedback = None
+            st.session_state.texto_falado = None
+
+    if st.session_state.aula_atual:
+        st.markdown("---")
         try:
-            prompt = (
-                f"Gere uma frase curta em inglês nível {st.session_state.nivel}. "
-                f"Formato obrigatório: Phrase: [Inglês] | Translation: [Português]"
-            )
-            res = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=[{"role": "user", "content": prompt}]
-            ).choices[0].message.content
+            texto = st.session_state.aula_atual
+            ing = texto.split("|")[0].split("Phrase:")[-1].strip()
+            pt = texto.split("|")[1].split("Translation:")[-1].strip()
             
-            if "|" in res:
-                st.session_state.aula_atual = res
-                st.session_state.feedback = None
-                st.session_state.texto_falado = None
-            else:
-                st.warning("Erro no formato da IA. Clique em 'Próxima' novamente.")
-        except Exception as e:
-            st.error(f"Erro ao conectar com Groq: {e}")
-
-# Exibição da lição ativa
-if st.session_state.aula_atual:
-    st.markdown("---")
-    try:
-        texto = st.session_state.aula_atual
-        ingles = texto.split("|")[0].split("Phrase:")[-1].strip()
-        portugues = texto.split("|")[1].split("Translation:")[-1].strip()
-        
-        st.subheader("Traduza e Fale:")
-        st.info(f"💡 {portugues}")
-        
-        if st.button("🔊 Ouvir Pronúncia"):
-            play_audio(ingles)
-        
-        st.write("### 🎤 Grave sua resposta:")
-        # Componente de microfone
-        gravacao = mic_recorder(
-            start_prompt="Clique para falar",
-            stop_prompt="Parar e Corrigir",
-            key='recorder_fala'
-        )
-
-        if gravacao:
-            with st.spinner("IA processando sua voz..."):
-                # Transcrição (Áudio para Texto)
-                fala_texto = transcrever_audio(gravacao['bytes'])
-                
-                if fala_texto:
-                    st.session_state.texto_falado = fala_texto
-                    # Avaliação (Texto para Feedback)
-                    feedback = corrigir_fala(fala_texto, ingles)
-                    st.session_state.feedback = feedback
-                    
-                    # Ganho de XP
-                    if "CORRETO" in feedback.upper():
-                        st.session_state.xp += 25
-                        st.balloons()
-
-        # Resultados
-        if st.session_state.texto_falado:
-            st.write(f"🗣️ **Você disse:** *{st.session_state.texto_falado}*")
+            st.info(f"**Traduza e fale:** {pt}")
             
-        if st.session_state.feedback:
-            if "CORRETO" in st.session_state.feedback.upper():
-                st.success(st.session_state.feedback)
-            else:
-                st.error(st.session_state.feedback)
-            st.write(f"✅ **Gabarito:** {ingles}")
+            if st.button("🔊 Ouvir Referência"):
+                play_audio(ing)
 
-    except Exception as e:
-        st.error("Erro ao carregar os dados da lição.")
+            # GRAVADOR DE VOZ
+            st.write("### 🎤 Sua vez de falar:")
+            audio = mic_recorder(start_prompt="Gravar", stop_prompt="Parar", key='recorder')
 
-# Lógica de subir de nível (CEFR)
-niveis_map = ["A1", "A2", "B1", "B2", "C1", "C2"]
+            if audio:
+                with st.spinner("Analisando..."):
+                    fala = transcrever_audio(audio['bytes'])
+                    if fala:
+                        st.session_state.texto_falado = fala
+                        # Prompt de correção
+                        p_corr = f"O aluno disse '{fala}' para a frase '{ing}'. Corrija e dê dicas em PT-BR. Se estiver certo diga CORRETO."
+                        st.session_state.feedback = chamar_ia(p_corr)
+                        if "CORRETO" in st.session_state.feedback.upper():
+                            st.session_state.xp += 25
+
+            if st.session_state.texto_falado:
+                st.write(f"🗣️ **Você disse:** {st.session_state.texto_falado}")
+                if "CORRETO" in st.session_state.feedback.upper():
+                    st.success(st.session_state.feedback)
+                else:
+                    st.error(st.session_state.feedback)
+                st.write(f"✅ **Gabarito:** {ing}")
+        except:
+            st.error("Erro ao carregar lição. Clique em Próxima.")
+
+# Lógica de subir nível
 if st.session_state.xp >= 100:
-    idx = niveis_map.index(st.session_state.nivel)
-    if idx < len(niveis_map) - 1:
-        st.session_state.nivel = niveis_map[idx+1]
-        st.session_state.xp = 0
-        st.toast(f"Parabéns! Você subiu para o nível {st.session_state.nivel}!", icon="🎉")
+    st.session_state.xp = 0
+    niveis = ["A1", "A2", "B1", "B2", "C1"]
+    idx = niveis.index(st.session_state.nivel)
+    if idx < len(niveis)-1:
+        st.session_state.nivel = niveis[idx+1]
+        st.balloons()
