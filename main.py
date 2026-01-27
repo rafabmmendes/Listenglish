@@ -64,7 +64,7 @@ if st.session_state.step == 'objetivo':
 
 elif st.session_state.step == 'teste_nivel':
     st.title("📝 Teste Rápido")
-    pergunta = st.radio("Traduza: 'Eu gosto de café'", ["I like coffee", "I likes coffee"])
+    pergunta = st.radio("Como se diz 'Eu gosto de café'?", ["I like coffee", "I likes coffee"])
     if st.button("Finalizar Teste"):
         st.session_state.nivel = "A2" if pergunta == "I like coffee" else "A1"
         st.session_state.step = 'pratica'
@@ -83,7 +83,7 @@ elif st.session_state.step == 'pratica':
 
     if st.button("⏭️ Próxima Pergunta", type="primary"):
         with st.spinner("Gerando..."):
-            prompt = f"Crie uma frase curta nível {st.session_state.nivel} sobre {st.session_state.obj_selecionado}. Formato: Phrase: [Inglês] | Translation: [Português]"
+            prompt = f"Crie uma frase em inglês nível {st.session_state.nivel} sobre {st.session_state.obj_selecionado}. Formato: Phrase: [Inglês] | Translation: [Português]"
             res = chamar_ia(prompt)
             if "|" in res:
                 st.session_state.aula_atual = res
@@ -92,4 +92,48 @@ elif st.session_state.step == 'pratica':
                 st.session_state.mic_key += 1
                 st.rerun()
 
+    # O código abaixo estava dando erro de indentação. Agora está corrigido:
     if st.session_state.aula_atual:
+        try:
+            texto = st.session_state.aula_atual
+            ing = texto.split("|")[0].split("Phrase:")[-1].replace("[","").replace("]","").strip()
+            pt = texto.split("|")[1].split("Translation:")[-1].replace("[","").replace("]","").strip()
+            
+            st.info(f"**Traduza:** {pt}")
+            if st.button("🔊 Ouvir Original"):
+                play_audio(ing)
+
+            st.write("### 🎤 Grave agora:")
+            audio = mic_recorder(
+                start_prompt="Gravar", 
+                stop_prompt="Parar", 
+                key=f"mic_{st.session_state.mic_key}"
+            )
+
+            if audio:
+                with st.spinner("Analisando..."):
+                    fala = transcrever_audio(audio['bytes'])
+                    if fala:
+                        st.session_state.texto_falado = fala
+                        p_corr = f"O aluno disse '{fala}' para a frase '{ing}'. Dê feedback e se estiver certo diga CORRETO."
+                        st.session_state.feedback = chamar_ia(p_corr)
+                        if "CORRETO" in st.session_state.feedback.upper():
+                            st.session_state.xp += 25
+
+            if st.session_state.texto_falado:
+                st.write(f"🗣️ **Você disse:** {st.session_state.texto_falado}")
+                if st.session_state.feedback:
+                    st.write(f"📝 **Feedback:** {st.session_state.feedback}")
+                st.write(f"✅ **Gabarito:** {ing}")
+                
+            if st.session_state.xp >= 100:
+                st.balloons()
+                st.session_state.xp = 0
+                niveis = ["A1", "A2", "B1", "B2", "C1"]
+                if st.session_state.nivel in niveis[:-1]:
+                    idx = niveis.index(st.session_state.nivel)
+                    st.session_state.nivel = niveis[idx+1]
+                    st.success(f"Parabéns! Subiu para {st.session_state.nivel}!")
+
+        except Exception as e:
+            st.error("Erro ao processar a lição. Clique em Próxima.")
