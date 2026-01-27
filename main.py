@@ -4,76 +4,74 @@ import base64
 from io import BytesIO
 
 # --- FUNÇÃO PARA GERAR ÁUDIO ---
-def speek(text):
+def play_audio(text):
     tts = gTTS(text=text, lang='en')
     fp = BytesIO()
     tts.write_to_fp(fp)
-    return fp
+    audio_bytes = fp.getvalue()
+    st.audio(audio_bytes, format="audio/mp3")
 
-def play_audio(text):
-    audio_file = speek(text)
-    audio_bytes = audio_file.getvalue()
-    audio_base64 = base64.b64encode(audio_bytes).decode()
-    audio_tag = f'<audio autoplay="true" src="data:audio/wav;base64,{audio_base64}">'
-    st.markdown(audio_tag, unsafe_allow_html=True)
-
-# --- INTERFACE DO APP ---
-st.set_page_config(page_title="LinguistAI - Audio Focus", page_icon="🎧")
+# --- INTERFACE ---
+st.set_page_config(page_title="LinguistAI", page_icon="🎧")
 st.title("🎧 LinguistAI: Teste Auditivo")
 
+# Inicializa as variáveis de estado
 if 'step' not in st.session_state:
     st.session_state.step = 'objective'
+if 'level_passed' not in st.session_state:
+    st.session_state.level_passed = False
 
-# PASSO 1: OBJETIVO
+# --- PASSO 1: OBJETIVO ---
 if st.session_state.step == 'objective':
     st.subheader("Qual seu objetivo principal?")
     obj = st.selectbox("Escolha:", ["Business (Trabalho)", "Travel (Viagem)", "Social"])
-    if st.button("Iniciar Teste de Nivelamento"):
+    if st.button("Iniciar Teste"):
         st.session_state.objective = obj
         st.session_state.step = 'test_a2'
         st.rerun()
 
-# PASSO 2: TESTE A2 (BÁSICO)
+# --- PASSO 2: TESTE A2 ---
 elif st.session_state.step == 'test_a2':
-    st.header("Nível A2 - Ouça com atenção")
+    st.header("Nível A2 - Básico")
+    st.write("Ouça a frase e responda abaixo:")
     
-    frase_a2 = "Hello! I am looking for the train station. Is it near here?"
+    frase_a2 = "I am looking for the train station. Is it near here?"
+    play_audio(frase_a2) # Agora o player fica fixo na tela
     
-    if st.button("🔊 Ouvir Áudio"):
-        play_audio(frase_a2)
+    resposta = st.text_input("O que a pessoa está procurando?", key="ans_a2")
     
-    resposta = st.text_input("O que a pessoa está procurando?")
-    
-    if st.button("Verificar"):
-        if "train" in resposta.lower() or "trem" in resposta.lower() or "estação" in resposta.lower():
-            st.success("Muito bem! Você captou a palavra-chave.")
-            if st.button("Ir para o Nível B2"):
-                st.session_state.step = 'test_b2'
-                st.rerun()
+    if st.button("Verificar Resposta"):
+        if any(word in resposta.lower() for word in ["train", "trem", "estação", "station"]):
+            st.success("Correto! Você está pronto para o próximo nível.")
+            st.session_state.level_passed = True
         else:
-            st.error("Não foi dessa vez. Seu nível atual é A1/A2.")
-            if st.button("Recomeçar"):
-                st.session_state.step = 'objective'
-                st.rerun()
+            st.error("Incorreto. Tente ouvir novamente ou recomece.")
 
-# PASSO 3: TESTE B2 (INTERMEDIÁRIO)
+    if st.session_state.level_passed:
+        if st.button("Avançar para Nível B2 ➡️"):
+            st.session_state.level_passed = False
+            st.session_state.step = 'test_b2'
+            st.rerun()
+
+# --- PASSO 3: TESTE B2 ---
 elif st.session_state.step == 'test_b2':
-    st.header("Nível B2 - Contexto Profissional")
+    st.header("Nível B2 - Intermediário")
+    st.write("Ouça com atenção o contexto profissional:")
     
     frase_b2 = "We need to schedule a meeting to discuss the budget cuts for the next quarter."
+    play_audio(frase_b2)
     
-    if st.button("🔊 Ouvir Áudio"):
-        play_audio(frase_b2)
-        
-    resposta_b2 = st.text_input("Sobre o que será a reunião?")
+    resposta_b2 = st.text_input("Qual o tema da reunião?", key="ans_b2")
     
     if st.button("Finalizar Teste"):
-        if "budget" in resposta_b2.lower() or "orçamento" in resposta_b2.lower():
+        if any(word in resposta_b2.lower() for word in ["budget", "orçamento", "cuts", "cortes"]):
             st.balloons()
-            st.success("Incrível! Você tem uma ótima compreensão auditiva (Nível B2/C1).")
+            st.success(f"Excelente! Seu nível é B2/C1 em {st.session_state.objective}.")
         else:
-            st.warning("Você entendeu parte, mas seu nível é B1.")
+            st.warning("Você chegou longe! Seu nível é B1.")
         
-        if st.button("Voltar ao Início"):
+        if st.button("Recomeçar do Zero"):
             st.session_state.step = 'objective'
+            st.session_state.level_passed = False
             st.rerun()
+            
