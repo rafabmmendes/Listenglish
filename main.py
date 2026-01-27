@@ -11,7 +11,7 @@ try:
 except Exception as e:
     st.error("Erro na API Key. Verifique os Secrets.")
 
-# --- 2. FUNÇÕES AUXILIARES ---
+# --- 2. FUNÇÕES DE IA ---
 
 def transcrever_audio(audio_bytes):
     try:
@@ -21,7 +21,7 @@ def transcrever_audio(audio_bytes):
             response_format="text"
         )
         return transcription
-    except Exception as e:
+    except:
         return None
 
 def chamar_ia(prompt):
@@ -43,7 +43,18 @@ def play_audio(text):
     except:
         st.warning("Áudio indisponível.")
 
-# --- 3. ESTADO DA SESSÃO ---
+# --- 3. LÓGICA DE TROCA DE PERGUNTA (CALLBACK) ---
+def proxima_pergunta():
+    prompt = (f"Gere uma frase curta em inglês nível {st.session_state.nivel} sobre {st.session_state.obj_selecionado}. "
+              f"Formato: Phrase: [Inglês] | Translation: [Português]")
+    res = chamar_ia(prompt)
+    if "|" in res:
+        st.session_state.aula_atual = res
+        st.session_state.feedback = None
+        st.session_state.texto_falado = None
+        st.session_state.mic_key += 1
+
+# --- 4. ESTADO DA SESSÃO ---
 if 'step' not in st.session_state: st.session_state.step = 'objetivo'
 if 'nivel' not in st.session_state: st.session_state.nivel = 'A1'
 if 'xp' not in st.session_state: st.session_state.xp = 0
@@ -52,7 +63,7 @@ if 'mic_key' not in st.session_state: st.session_state.mic_key = 0
 if 'feedback' not in st.session_state: st.session_state.feedback = None
 if 'texto_falado' not in st.session_state: st.session_state.texto_falado = None
 
-# --- 4. FLUXO DE TELAS ---
+# --- 5. FLUXO DE TELAS ---
 
 if st.session_state.step == 'objetivo':
     st.title("🎯 Escolha seu Objetivo")
@@ -81,18 +92,9 @@ elif st.session_state.step == 'pratica':
 
     st.title("🗣️ Pratique sua Fala")
 
-    if st.button("⏭️ Próxima Pergunta", type="primary"):
-        with st.spinner("Gerando..."):
-            prompt = f"Crie uma frase em inglês nível {st.session_state.nivel} sobre {st.session_state.obj_selecionado}. Formato: Phrase: [Inglês] | Translation: [Português]"
-            res = chamar_ia(prompt)
-            if "|" in res:
-                st.session_state.aula_atual = res
-                st.session_state.feedback = None
-                st.session_state.texto_falado = None
-                st.session_state.mic_key += 1
-                st.rerun()
+    # BOTÃO ATUALIZADO COM CALLBACK (Executa a função de trocar)
+    st.button("⏭️ Próxima Pergunta", type="primary", on_click=proxima_pergunta)
 
-    # O código abaixo estava dando erro de indentação. Agora está corrigido:
     if st.session_state.aula_atual:
         try:
             texto = st.session_state.aula_atual
@@ -130,10 +132,8 @@ elif st.session_state.step == 'pratica':
                 st.balloons()
                 st.session_state.xp = 0
                 niveis = ["A1", "A2", "B1", "B2", "C1"]
-                if st.session_state.nivel in niveis[:-1]:
-                    idx = niveis.index(st.session_state.nivel)
+                idx = niveis.index(st.session_state.nivel)
+                if idx < len(niveis)-1:
                     st.session_state.nivel = niveis[idx+1]
-                    st.success(f"Parabéns! Subiu para {st.session_state.nivel}!")
-
-        except Exception as e:
-            st.error("Erro ao processar a lição. Clique em Próxima.")
+        except:
+            st.error("Erro ao carregar lição. Clique em Próxima.")
