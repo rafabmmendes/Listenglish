@@ -3,15 +3,7 @@ import google.generativeai as genai
 from gtts import gTTS
 from io import BytesIO
 import random
-
-# --- BANCO DE DADOS DE RESERVA (Caso a IA falhe) ---
-FRASES_RESERVA = [
-    {"en": "I need to check my email.", "pt": "Eu preciso checar meu e-mail."},
-    {"en": "Where is the nearest station?", "pt": "Onde fica a estação mais próxima?"},
-    {"en": "Could you repeat that, please?", "pt": "Você poderia repetir isso, por favor?"},
-    {"en": "I am looking for a new job.", "pt": "Estou procurando um novo emprego."},
-    {"en": "Have a great day!", "pt": "Tenha um ótimo dia!"}
-]
+from streamlit_mic_recorder import mic_recorder # Nova biblioteca
 
 # --- CONFIGURAÇÃO ---
 @st.cache_resource
@@ -41,55 +33,78 @@ if 'aula_atual' not in st.session_state: st.session_state.aula_atual = None
 
 # --- SIDEBAR ---
 with st.sidebar:
-    st.title("👤 Seu Progresso")
+    st.title("👤 Seu Perfil")
     st.metric("Nível", st.session_state.nivel)
-    st.progress(st.session_state.xp / 100)
-    st.write(f"XP: {st.session_state.xp}/100")
+    st.progress(st.session_state.xp / 100 if st.session_state.xp < 100 else 1.0)
     if st.button("🔄 Reiniciar"):
         for key in list(st.session_state.keys()): del st.session_state[key]
         st.rerun()
 
 # --- ÁREA PRINCIPAL ---
-st.title("🏋️ Treino de Inglês")
+st.title("🗣️ Treino de Fala (Speaking)")
 
-if st.button("✨ Gerar Nova Lição"):
-    with st.spinner("Buscando lição..."):
+if st.button("✨ Nova Frase para Praticar"):
+    with st.spinner("IA criando frase..."):
         try:
-            # TENTA USAR A IA
             seed = random.randint(1, 10000)
             prompt = f"Level {st.session_state.nivel} English sentence. Format: Phrase: [English] | Translation: [Portuguese]. Seed: {seed}"
             res = model.generate_content(prompt)
             st.session_state.aula_atual = res.text
-            st.session_state.xp += 20
+            st.session_state.feedback = None
         except:
-            # SE A IA FALHAR, USA O BANCO DE RESERVA
-            item = random.choice(FRASES_RESERVA)
-            st.session_state.aula_atual = f"Phrase: {item['en']} | Translation: {item['pt']}"
-            st.session_state.xp += 10
-            st.info("Nota: Usando lição do banco de reserva (IA em repouso).")
+            st.error("Erro na IA. Aguarde 15 segundos.")
 
-# MOSTRAR A LIÇÃO SEMPRE QUE EXISTIR
 if st.session_state.aula_atual:
     st.markdown("---")
-    try:
-        texto = st.session_state.aula_atual
-        ingles = texto.split("|")[0].split(":")[-1].strip()
-        portugues = texto.split("|")[1].split(":")[-1].strip()
+    texto = st.session_state.aula_atual
+    ingles_correto = texto.split("|")[0].split(":")[-1].strip()
+    portugues = texto.split("|")[1].split(":")[-1].strip()
+    
+    st.subheader("Como se diz em inglês?")
+    st.info(f"💡 {portugues}")
+    
+    if st.button("🔊 Ouvir Pronúncia Original"):
+        play_audio(ingles_correto)
+
+    st.write("### 🎤 Grave sua voz falando a frase:")
+    
+    # COMPONENTE DE GRAVAÇÃO
+    audio_gravado = mic_recorder(
+        start_prompt="Clique para Gravar",
+        stop_prompt="Parar Gravação",
+        key='recorder'
+    )
+
+    if audio_gravado:
+        st.audio(audio_gravado['bytes']) # Toca sua própria voz de volta
         
-        st.subheader("Como se diz em inglês?")
-        st.write(f"💡 *{portugues}*")
-        
-        if st.button("🔊 Ver Resposta e Ouvir"):
-            st.success(ingles)
-            play_audio(ingles)
-            
-            # Lógica de subir nível
-            if st.session_state.xp >= 100:
-                niveis = ["A1", "A2", "B1", "B2", "C1"]
-                idx = niveis.index(st.session_state.nivel)
-                if idx < len(niveis)-1:
-                    st.session_state.nivel = niveis[idx+1]
-                    st.session_state.xp = 0
-                    st.balloons()
-    except:
-        st.error("Erro ao exibir lição. Tente gerar outra.")
+        if st.button("🔍 Analisar minha pronúncia"):
+            with st.spinner("IA analisando seu áudio..."):
+                try:
+                    # Usamos a capacidade multimodal do Gemini para ouvir o áudio
+                    # ou enviamos os bytes para transcrição
+                    audio_data = {
+                        "mime_type": "audio/wav",
+                        "data": audio_gravado['bytes']
+                    }
+                    
+                    prompt_analise = (
+                        f"O aluno deveria falar: '{ingles_correto}'. "
+                        f"Ouça o áudio anexo e diga se a pronúncia está correta. "
+                        f"Dê dicas curtas em português sobre como melhorar."
+                    )
+                    
+                    # O Gemini 1.5 Flash aceita áudio diretamente!
+                    response = model.generate_content([prompt_analise, audio_data])
+                    st.session_state.feedback = response.text
+                    
+                    if "parabéns" in response.text.lower() or "correto" in response.text.lower():
+                        st.session_state.xp += 25
+                        st.balloons()
+                except Exception as e:
+                    st.error("A IA não conseguiu processar o áudio agora. Tente novamente.")
+
+    if 'feedback' in st.session_state and st.session_state.feedback:
+        st.subheader("Análise da IA:")
+        st.write(st.session_state.feedback)
+        st.write(f"**Gabarito:** {ingles_correto}")
