@@ -11,7 +11,7 @@ from streamlit_mic_recorder import mic_recorder
 try:
     client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 except Exception as e:
-    st.error("Erro: API Key não configurada nos Secrets do Streamlit.")
+    st.error("Erro: API Key não configurada.")
 
 DIFICULDADES = [
     {"nivel": "Begginer", "desc": "Short phrases, simple greetings."},
@@ -22,26 +22,32 @@ DIFICULDADES = [
     {"nivel": "Fluenty", "desc": "Native-level slang and idioms."}
 ]
 
-# --- 2. FUNÇÃO DE ÁUDIO (COM QUEBRA DE CACHE) ---
+# --- 2. FUNÇÃO DE ÁUDIO (FOCO NA PRONÚNCIA PT) ---
 def play_audio(text, lang='en', autoplay=False, label="Ouvir"):
     try:
         tts = gTTS(text=text, lang=lang)
         fp = BytesIO()
         tts.write_to_fp(fp)
         b64 = base64.b64encode(fp.getvalue()).decode()
-        # unique_id evita que o navegador toque o áudio antigo da memória
-        unique_id = f"{time.time()}_{random.randint(1, 1000)}"
+        
+        # ID Único para garantir que o áudio mude sempre
+        unique_id = f"aud_{time.time()}_{random.randint(1, 1000)}"
+        
+        # Estilo diferente para o áudio em Português
+        bg_color = "#2e7d32" if lang == 'pt' else "#1e1e1e"
+        border_color = "#4caf50" if lang == 'pt' else "#444"
+        
         md = f"""
-            <div style="margin: 10px 0; padding: 10px; border: 1px solid #ddd; border-radius: 10px; background-color: #1e1e1e; color: white;">
-                <small>{label}</small><br>
-                <audio id="{unique_id}" controls {"autoplay" if autoplay else ""} style="width: 100%;">
+            <div style="margin: 15px 0; padding: 15px; border: 2px solid {border_color}; border-radius: 15px; background-color: {bg_color}; color: white;">
+                <strong style="font-size: 1.1em;">🔊 {label}</strong><br>
+                <audio id="{unique_id}" controls {"autoplay" if autoplay else ""} style="width: 100%; margin-top: 10px;">
                     <source src="data:audio/mp3;base64,{b64}#t={unique_id}" type="audio/mp3">
                 </audio>
             </div>
             """
         st.markdown(md, unsafe_allow_html=True)
     except:
-        st.warning("Áudio indisponível momentaneamente.")
+        st.warning("Erro ao gerar áudio.")
 
 # --- 3. ESTADO DA SESSÃO ---
 if 'nivel_idx' not in st.session_state: st.session_state.nivel_idx = 0
@@ -54,7 +60,6 @@ if 'audio_key' not in st.session_state: st.session_state.audio_key = 0
 if 'audio_inicial_ok' not in st.session_state: st.session_state.audio_inicial_ok = False
 
 nivel_atual = DIFICULDADES[st.session_state.nivel_idx]["nivel"]
-desc_atual = DIFICULDADES[st.session_state.nivel_idx]["desc"]
 
 # --- 4. FUNÇÃO PARA GERAR NOVA PERGUNTA ---
 def proxima_pergunta():
@@ -64,9 +69,8 @@ def proxima_pergunta():
     st.session_state.audio_inicial_ok = False
     st.session_state.audio_key += 1
     
-    seed = f"{time.time()}-{random.randint(1, 9999)}"
-    prompt = (f"Seed: {seed}. Level: {nivel_atual}. Context: {desc_atual}. "
-              f"Generate a UNIQUE sentence. Format: Phrase: [English] | Translation: [Portuguese]")
+    prompt = (f"Level: {nivel_atual}. Generate a UNIQUE sentence. "
+              f"Format: Phrase: [English] | Translation: [Portuguese]")
     
     try:
         res = client.chat.completions.create(
@@ -79,87 +83,60 @@ def proxima_pergunta():
             st.session_state.frase_en = res.split("|")[0].split("Phrase:")[-1].strip(" []")
             st.session_state.frase_pt = res.split("|")[1].split("Translation:")[-1].strip(" []")
     except:
-        st.error("Falha ao gerar frase. Tente novamente.")
+        st.error("Erro na IA. Tente novamente.")
 
-# --- 5. INTERFACE (SIDEBAR) ---
+# --- 5. INTERFACE ---
 with st.sidebar:
     st.title("🏆 Maestria")
-    st.session_state.modo = st.radio("Modo de Jogo:", ["Prática", "Teste de Maestria"])
+    st.session_state.modo = st.radio("Modo:", ["Prática", "Teste de Maestria"])
     st.divider()
-    st.write(f"📈 Nível Atual: **{nivel_atual}**")
-    
+    st.write(f"📈 Nível: **{nivel_atual}**")
     if st.session_state.modo == "Teste de Maestria":
-        st.write(f"Sequência: **{st.session_state.test_streak} / 5**")
+        st.write(f"Streak: {st.session_state.test_streak}/5")
         st.progress(st.session_state.test_streak / 5)
-        st.caption("Acerte 5 seguidas para subir de nível!")
-    
-    if st.button("♻️ Reiniciar Tudo"):
-        st.session_state.clear()
-        st.rerun()
 
-# --- 6. CONTEÚDO PRINCIPAL ---
 st.title("🎙️ Gemini English Coach")
 
-# Garante que sempre haja uma pergunta carregada
-if st.session_state.frase_pt is None:
-    proxima_pergunta()
-
-# Botão principal sempre visível
-if st.button("⏭️ PRÓXIMA PERGUNTA", type="primary"):
+if st.button("⏭️ PRÓXIMA FRASE", type="primary") or st.session_state.frase_pt is None:
     proxima_pergunta()
     st.rerun()
 
+# --- EXIBIÇÃO DA PRONÚNCIA ---
 if st.session_state.frase_pt:
-    st.markdown("---")
-    st.info(f"### Como se diz em Inglês?\n## {st.session_state.frase_pt}")
+    st.info(f"### Traduza: {st.session_state.frase_pt}")
 
-    # Áudio em Português automático (Cache Buster)
+    # AQUI ESTÁ A PRONÚNCIA EM PORTUGUÊS (PLAYER VERDE)
     if not st.session_state.audio_inicial_ok:
-        play_audio(st.session_state.frase_pt, lang='pt', autoplay=True, label="Ouvindo desafio...")
+        play_audio(st.session_state.frase_pt, lang='pt', autoplay=True, label="PRONÚNCIA EM PORTUGUÊS")
         st.session_state.audio_inicial_ok = True
     else:
-        play_audio(st.session_state.frase_pt, lang='pt', autoplay=False, label="Repetir desafio")
+        play_audio(st.session_state.frase_pt, lang='pt', autoplay=False, label="REPETIR PORTUGUÊS")
 
     st.divider()
 
-    # Gravador com chave dinâmica
-    audio_data = mic_recorder(
-        start_prompt="🎤 Gravar Tradução", 
-        stop_prompt="⏹️ Analisar", 
-        key=f"mic_{st.session_state.audio_key}"
-    )
+    # MICROFONE
+    audio_data = mic_recorder(start_prompt="🎤 Gravar Inglês", stop_prompt="⏹️ Parar", key=f"mic_{st.session_state.audio_key}")
 
     if audio_data:
+        # (Lógica de transcrição e feedback igual às versões anteriores...)
         with st.spinner("Analisando..."):
-            transcript = client.audio.transcriptions.create(
-                file=("audio.wav", audio_data['bytes']), 
-                model="whisper-large-v3-turbo", 
-                response_format="text"
-            )
-            f_prompt = f"Student said '{transcript}' for '{st.session_state.frase_en}'. Correct it in PT-BR. If correct, start with CORRETO."
-            eval_text = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=[{"role": "user", "content": f_prompt}]
-            ).choices[0].message.content
+            transcript = client.audio.transcriptions.create(file=("audio.wav", audio_data['bytes']), model="whisper-large-v3-turbo", response_format="text")
+            f_prompt = f"Student said '{transcript}' for '{st.session_state.frase_en}'. Correct? Start with CORRETO."
+            eval_text = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=[{"role": "user", "content": f_prompt}]).choices[0].message.content
             st.session_state.feedback = {"falado": transcript, "texto": eval_text}
 
     if st.session_state.feedback:
-        st.write(f"🗣️ **Você disse:** {st.session_state.feedback['falado']}")
-        st.write(f"📝 **Feedback:** {st.session_state.feedback['texto']}")
-        st.success(f"✅ **Gabarito:** {st.session_state.frase_en}")
-        play_audio(st.session_state.frase_en, lang='en', label="Pronúncia Correta")
-
-        # Lógica de Maestria: Só muda nível se acertar 5 no Modo Teste
-        if "CORRETO" in st.session_state.feedback['texto'].upper():
-            if st.session_state.modo == "Teste de Maestria":
-                st.session_state.test_streak += 1
-                if st.session_state.test_streak >= 5:
-                    st.balloons()
-                    if st.session_state.nivel_idx < len(DIFICULDADES) - 1:
-                        st.session_state.nivel_idx += 1
-                        st.session_state.test_streak = 0
-                        st.success(f"Nível {DIFICULDADES[st.session_state.nivel_idx]['nivel']} desbloqueado!")
-        else:
-            if st.session_state.modo == "Teste de Maestria":
-                st.error("Sequência resetada!")
-                st.session_state.test_streak = 0
+        st.write(f"📝 {st.session_state.feedback['texto']}")
+        st.success(f"✅ Gabarito: {st.session_state.frase_en}")
+        play_audio(st.session_state.frase_en, lang='en', label="PRONÚNCIA EM INGLÊS")
+        
+        # Lógica de subir nível (5 acertos)
+        if "CORRETO" in st.session_state.feedback['texto'].upper() and st.session_state.modo == "Teste de Maestria":
+            st.session_state.test_streak += 1
+            if st.session_state.test_streak >= 5:
+                st.balloons()
+                if st.session_state.nivel_idx < len(DIFICULDADES) - 1:
+                    st.session_state.nivel_idx += 1
+                    st.session_state.test_streak = 0
+        elif st.session_state.modo == "Teste de Maestria":
+            st.session_state.test_streak = 0
