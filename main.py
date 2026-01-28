@@ -14,7 +14,7 @@ except Exception as e:
     st.error("Erro: API Key não encontrada.")
 
 DIFICULDADES = {
-    "Begginer": "Short phrases, very simple greetings.",
+    "Begginer": "Short phrases, simple greetings.",
     "Basic": "Sentences in present tense about daily life.",
     "Intermediate": "Past and future tenses with connectors.",
     "Advanced": "Complex sentences with phrasal verbs.",
@@ -32,8 +32,8 @@ def play_audio(text, lang='en', autoplay=False, label="Ouvir"):
         b64 = base64.b64encode(fp.getvalue()).decode()
         unique_id = f"{time.time()}_{random.randint(1, 1000)}"
         md = f"""
-            <div style="margin: 10px 0; padding: 10px; border: 1px solid #ddd; border-radius: 10px;">
-                <small>{label} ({lang.upper()})</small><br>
+            <div style="margin: 10px 0; padding: 10px; border: 1px solid #ddd; border-radius: 10px; background-color: #ffffff;">
+                <small style="color: #666;">{label} ({lang.upper()})</small><br>
                 <audio id="{unique_id}" controls {"autoplay" if autoplay else ""} style="width: 100%;">
                     <source src="data:audio/mp3;base64,{b64}#t={unique_id}" type="audio/mp3">
                 </audio>
@@ -44,7 +44,7 @@ def play_audio(text, lang='en', autoplay=False, label="Ouvir"):
         st.warning("Áudio indisponível.")
 
 # --- 3. ESTADO DA SESSÃO ---
-if 'nivel' not in st.session_state: st.session_state.nivel = 'Begginer'
+if 'nivel_idx' not in st.session_state: st.session_state.nivel_idx = 0
 if 'modo' not in st.session_state: st.session_state.modo = 'Prática'
 if 'frase_en' not in st.session_state: st.session_state.frase_en = None
 if 'frase_pt' not in st.session_state: st.session_state.frase_pt = None
@@ -52,6 +52,9 @@ if 'feedback' not in st.session_state: st.session_state.feedback = None
 if 'test_streak' not in st.session_state: st.session_state.test_streak = 0
 if 'audio_key' not in st.session_state: st.session_state.audio_key = 0
 if 'audio_inicial_ok' not in st.session_state: st.session_state.audio_inicial_ok = False
+
+# Nível atual baseado no índice
+nivel_atual = LISTA_NIVEIS[st.session_state.nivel_idx]
 
 # --- 4. FUNÇÃO PARA GERAR NOVA PERGUNTA ---
 def proxima_pergunta():
@@ -61,7 +64,8 @@ def proxima_pergunta():
     st.session_state.audio_inicial_ok = False
     st.session_state.audio_key += 1
     seed = f"{time.time()}-{random.randint(1, 9999)}"
-    prompt = (f"Seed: {seed}. Level: {st.session_state.nivel}. "
+    prompt = (f"Seed: {seed}. Level: {nivel_atual}. "
+              f"Instructions: {DIFICULDADES[nivel_atual]}. "
               f"Generate a UNIQUE sentence. Format: Phrase: [English] | Translation: [Portuguese]")
     try:
         res = client.chat.completions.create(
@@ -77,79 +81,22 @@ def proxima_pergunta():
 
 # --- 5. INTERFACE (SIDEBAR) ---
 with st.sidebar:
-    st.title("🏆 Painel")
-    st.session_state.modo = st.radio("Escolha o Modo:", ["Prática", "Teste de Maestria"])
-    st.session_state.nivel = st.selectbox("Nível:", LISTA_NIVEIS)
+    st.title("🏆 Maestria")
+    st.session_state.modo = st.radio("Modo de Jogo:", ["Prática", "Teste de Maestria"])
     
     st.divider()
-    if st.session_state.modo == "Teste de Maestria":
-        st.subheader("Progresso do Teste")
-        st.write(f"Acertos: {st.session_state.test_streak} / 5")
-        st.progress(st.session_state.test_streak / 5)
+    st.write(f"📈 Nível Atual: **{nivel_atual}**")
     
-    if st.button("♻️ Reiniciar Tudo"):
+    if st.session_state.modo == "Teste de Maestria":
+        st.subheader("Desafio de Nível")
+        st.write(f"Sequência: {st.session_state.test_streak} / 5")
+        st.progress(st.session_state.test_streak / 5)
+        st.caption("Acerte 5 seguidas para desbloquear o próximo nível!")
+    else:
+        st.info("No modo Prática você treina sem perder sua sequência.")
+
+    if st.button("♻️ Reiniciar Progresso"):
         st.session_state.clear()
         st.rerun()
 
-# --- 6. CONTEÚDO PRINCIPAL ---
-st.title("🎙️ Gemini English Coach")
-
-if st.button("⏭️ GERAR NOVA PERGUNTA", type="primary"):
-    proxima_pergunta()
-    st.rerun()
-
-if st.session_state.frase_pt is None:
-    proxima_pergunta()
-
-if st.session_state.frase_pt:
-    st.info(f"### Como se diz:\n# {st.session_state.frase_pt}")
-
-    if not st.session_state.audio_inicial_ok:
-        play_audio(st.session_state.frase_pt, lang='pt', autoplay=True, label="Ouvir Desafio")
-        st.session_state.audio_inicial_ok = True
-    else:
-        play_audio(st.session_state.frase_pt, lang='pt', autoplay=False, label="Repetir Desafio")
-
-    st.divider()
-
-    audio_data = mic_recorder(
-        start_prompt="🎤 Gravar Tradução", 
-        stop_prompt="⏹️ Analisar", 
-        key=f"mic_{st.session_state.audio_key}"
-    )
-
-    if audio_data:
-        with st.spinner("Analisando..."):
-            transcript = client.audio.transcriptions.create(
-                file=("audio.wav", audio_data['bytes']), 
-                model="whisper-large-v3-turbo", 
-                response_format="text"
-            )
-            f_prompt = f"The student said '{transcript}' for '{st.session_state.frase_en}'. Correct in Portuguese. If correct, start with CORRETO."
-            eval_text = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=[{"role": "user", "content": f_prompt}]
-            ).choices[0].message.content
-            st.session_state.feedback = {"falado": transcript, "texto": eval_text}
-
-    if st.session_state.feedback:
-        st.write(f"🗣️ **Você disse:** {st.session_state.feedback['falado']}")
-        st.write(f"📝 **Feedback:** {st.session_state.feedback['texto']}")
-        st.success(f"✅ **Gabarito:** {st.session_state.frase_en}")
-        play_audio(st.session_state.frase_en, lang='en', label="Pronúncia Correta")
-
-        # BLOCO QUE ESTAVA DANDO ERRO DE INDENTAÇÃO CORRIGIDO:
-        if "CORRETO" in st.session_state.feedback['texto'].upper():
-            if st.session_state.modo == "Teste de Maestria":
-                st.session_state.test_streak += 1
-                if st.session_state.test_streak >= 5:
-                    st.balloons()
-                    idx = LISTA_NIVEIS.index(st.session_state.nivel)
-                    if idx < len(LISTA_NIVEIS) - 1:
-                        st.session_state.nivel = LISTA_NIVEIS[idx+1]
-                        st.session_state.test_streak = 0
-                        st.success(f"Subiu para {st.session_state.nivel}!")
-        else:
-            if st.session_state.modo == "Teste de Maestria":
-                st.error("Erro! Streak resetado.")
-                st.session_state.test_streak = 0
+# --- 6. CONTEÚDO PRINCIPAL
